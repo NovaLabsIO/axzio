@@ -16,6 +16,10 @@
 	} from '$lib/identity/schema';
 
 	let identityReading: IdentityReading | null = null;
+	let cardElement: HTMLDivElement | null = null;
+	let isExporting = false;
+
+	const EXPORT_FILENAME = 'axzio-identity-signal.png';
 
 	onMount(() => {
 		const savedValue = sessionStorage.getItem(IDENTITY_RESULT_STORAGE_KEY);
@@ -30,6 +34,105 @@
 			identityReading = null;
 		}
 	});
+
+	function copyComputedStyles(source: Element, target: HTMLElement) {
+		const computed = window.getComputedStyle(source);
+		const style = Array.from(computed)
+			.map((property) => `${property}: ${computed.getPropertyValue(property)};`)
+			.join(' ');
+
+		target.setAttribute('style', style);
+
+		const sourceChildren = Array.from(source.children);
+		const targetChildren = Array.from(target.children);
+
+		sourceChildren.forEach((child, index) => {
+			const targetChild = targetChildren[index];
+
+			if (child instanceof HTMLElement && targetChild instanceof HTMLElement) {
+				copyComputedStyles(child, targetChild);
+			}
+		});
+	}
+
+	function createCardSvg(node: HTMLElement) {
+		const rect = node.getBoundingClientRect();
+		const width = Math.ceil(rect.width);
+		const height = Math.ceil(rect.height);
+		const clone = node.cloneNode(true);
+
+		if (!(clone instanceof HTMLElement)) {
+			throw new Error('Card clone failed.');
+		}
+
+		copyComputedStyles(node, clone);
+		clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+		clone.style.margin = '0';
+
+		const markup = new XMLSerializer().serializeToString(clone);
+		const svg = `
+			<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+				<foreignObject width="100%" height="100%">${markup}</foreignObject>
+			</svg>
+		`;
+
+		return { svg, width, height };
+	}
+
+	function loadImage(url: string) {
+		return new Promise<HTMLImageElement>((resolve, reject) => {
+			const image = new Image();
+			image.onload = () => resolve(image);
+			image.onerror = () => reject(new Error('Image rendering failed.'));
+			image.src = url;
+		});
+	}
+
+	async function exportCard() {
+		if (!cardElement || isExporting) {
+			return;
+		}
+
+		isExporting = true;
+
+		try {
+			if ('fonts' in document) {
+				await document.fonts.ready;
+			}
+
+			const { svg, width, height } = createCardSvg(cardElement);
+			const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+
+			try {
+				const image = await loadImage(svgUrl);
+				const canvas = document.createElement('canvas');
+				const scale = window.devicePixelRatio > 1 ? 2 : 1;
+
+				canvas.width = width * scale;
+				canvas.height = height * scale;
+
+				const context = canvas.getContext('2d');
+
+				if (!context) {
+					throw new Error('Canvas export is unavailable.');
+				}
+
+				context.scale(scale, scale);
+				context.drawImage(image, 0, 0, width, height);
+
+				const downloadLink = document.createElement('a');
+				downloadLink.href = canvas.toDataURL('image/png');
+				downloadLink.download = EXPORT_FILENAME;
+				downloadLink.click();
+			} finally {
+				URL.revokeObjectURL(svgUrl);
+			}
+		} catch (error) {
+			console.error('Failed to export identity card.', error);
+		} finally {
+			isExporting = false;
+		}
+	}
 </script>
 
 <main class="shell">
@@ -41,12 +144,22 @@
 				<p class="subheading">Your reflections reveal the following identity pattern.</p>
 			</header>
 
-			<IdentitySignalCard
-				archetype={identityReading.archetype}
-				primaryMode={identityReading.primaryMode}
-				corePattern={identityReading.corePattern}
-				growthVector={identityReading.growthVector}
-			/>
+			<div class="card-export-target" bind:this={cardElement}>
+				<IdentitySignalCard
+					archetype={identityReading.archetype}
+					primaryMode={identityReading.primaryMode}
+					corePattern={identityReading.corePattern}
+					growthVector={identityReading.growthVector}
+				/>
+			</div>
+
+			<button class="secondary-cta" type="button" on:click={exportCard} disabled={isExporting}>
+				{#if isExporting}
+					Exporting...
+				{:else}
+					Export Card
+				{/if}
+			</button>
 
 			<section class="section">
 				<p class="section-label">Primary Identity Summary</p>
@@ -214,22 +327,35 @@
 		color: #2f2823;
 	}
 
-	.cta {
+	.cta,
+	.secondary-cta {
 		justify-self: start;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
 		padding: 0.95rem 1.4rem;
 		border-radius: 999px;
-		background: #1e1b18;
-		color: #f8f3ea;
-		text-decoration: none;
 		font-size: 0.95rem;
 		font-weight: 600;
 		letter-spacing: 0.02em;
 		transition:
 			transform 140ms ease,
-			background-color 140ms ease;
+			background-color 140ms ease,
+			border-color 140ms ease;
+	}
+
+	.cta {
+		border: 0;
+		background: #1e1b18;
+		color: #f8f3ea;
+		text-decoration: none;
+	}
+
+	.secondary-cta {
+		border: 1px solid rgba(49, 43, 38, 0.16);
+		background: rgba(255, 251, 245, 0.78);
+		color: #1e1b18;
+		cursor: pointer;
 	}
 
 	.cta:hover,
@@ -241,6 +367,24 @@
 	.cta:focus-visible {
 		outline: 2px solid #8b765d;
 		outline-offset: 4px;
+	}
+
+	.secondary-cta:hover,
+	.secondary-cta:focus-visible {
+		background: rgba(255, 251, 245, 0.94);
+		border-color: rgba(49, 43, 38, 0.24);
+		transform: translateY(-1px);
+	}
+
+	.secondary-cta:focus-visible {
+		outline: 2px solid #8b765d;
+		outline-offset: 4px;
+	}
+
+	.secondary-cta:disabled {
+		cursor: progress;
+		opacity: 0.72;
+		transform: none;
 	}
 
 	@media (max-width: 760px) {
@@ -259,7 +403,8 @@
 			gap: 1.5rem;
 		}
 
-		.cta {
+		.cta,
+		.secondary-cta {
 			width: 100%;
 			justify-self: stretch;
 		}
