@@ -1,26 +1,26 @@
-// @ts-ignore Node built-ins are available at runtime in the SvelteKit server environment.
-import { mkdir, appendFile } from 'node:fs/promises';
-// @ts-ignore Node built-ins are available at runtime in the SvelteKit server environment.
-import path from 'node:path';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { parseIdentityReading, type IdentityReading } from '$lib/identity/schema';
 import {
-	parseIdentityReading,
-	type IdentityReading
-} from '$lib/identity/schema';
+	appendCaptureRecord,
+	createResultCaptureSnapshot,
+	type FeedbackValue
+} from '$lib/server/capture-store';
 
-const CAPTURE_DIRECTORY = path.join(process.cwd(), '.data');
-const CAPTURE_FILE = path.join(CAPTURE_DIRECTORY, 'private-test-captures.jsonl');
-
-type CaptureKind = 'email' | 'feedback';
-type FeedbackValue = 'Yes' | 'Somewhat' | 'No';
-
-type CapturePayload = {
-	kind: CaptureKind;
-	email?: string;
-	feedback?: FeedbackValue;
-	reading?: IdentityReading;
+type EmailCapturePayload = {
+	kind: 'email';
+	email: string;
+	reading: IdentityReading;
 };
+
+type FeedbackCapturePayload = {
+	kind: 'feedback';
+	feedback: FeedbackValue;
+	feedbackText: string;
+	reading: IdentityReading;
+};
+
+type CapturePayload = EmailCapturePayload | FeedbackCapturePayload;
 
 function isFeedbackValue(value: unknown): value is FeedbackValue {
 	return value === 'Yes' || value === 'Somewhat' || value === 'No';
@@ -62,10 +62,13 @@ function parseCapturePayload(body: unknown): CapturePayload | null {
 		return null;
 	}
 
-	return { kind, feedback: candidate.feedback, reading };
+	const feedbackText =
+		typeof candidate.feedbackText === 'string' ? candidate.feedbackText.trim() : '';
+
+	return { kind, feedback: candidate.feedback, feedbackText, reading };
 }
 
-export const POST: RequestHandler = async ({ request, getClientAddress }) => {
+export const POST: RequestHandler = async ({ request }) => {
 	let requestBody: unknown;
 
 	try {
@@ -80,16 +83,30 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		return json({ error: 'Invalid capture payload.' }, { status: 400 });
 	}
 
+	const readingSnapshot = createResultCaptureSnapshot(payload.reading);
+
 	const record = {
-		...payload,
 		capturedAt: new Date().toISOString(),
 		userAgent: request.headers.get('user-agent') ?? '',
-		clientAddress: getClientAddress()
+		result: readingSnapshot
 	};
 
 	try {
-		await mkdir(CAPTURE_DIRECTORY, { recursive: true });
-		await appendFile(CAPTURE_FILE, `${JSON.stringify(record)}\n`, 'utf8');
+		if (payload.kind === 'email') {
+			await appendCaptureRecord({
+				kind: 'email',
+				...record,
+				email: payload.email,
+				cardSnapshot: readingSnapshot
+			});
+		} else {
+			await appendCaptureRecord({
+				kind: 'feedback',
+				...record,
+				feedback: payload.feedback,
+				feedbackText: payload.feedbackText ?? ''
+			});
+		}
 	} catch {
 		return json({ error: 'Unable to store capture.' }, { status: 500 });
 	}

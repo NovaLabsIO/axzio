@@ -6,8 +6,11 @@ AXZIO v1 is a lightweight identity reading web app built with SvelteKit.
 
 1. Install dependencies:
    `npm install`
-2. Create a local env file from the example and set your OpenAI key:
+2. Create a local env file from the example and set:
    `OPENAI_API_KEY=your_key_here`
+   `PUBLIC_SUPABASE_URL=https://your-project.supabase.co`
+   `PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key_here`
+   `SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here`
 3. Start the dev server:
    `npm run dev`
 
@@ -24,7 +27,20 @@ AXZIO v1 is a lightweight identity reading web app built with SvelteKit.
 - Framework preset: `SvelteKit`
 - Root directory: `.`
 - Node version: `22.x`
-- Required environment variable: `OPENAI_API_KEY`
+- Required environment variables:
+  `OPENAI_API_KEY`
+  `PUBLIC_SUPABASE_URL`
+  `PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+  `SUPABASE_SERVICE_ROLE_KEY`
+
+## Supabase persistence
+
+- Apply the SQL in `supabase/schema.sql` to create:
+  `axzio_results`
+  `axzio_feedback`
+  `axzio_email_submissions`
+- Writes are server-side only and use `SUPABASE_SERVICE_ROLE_KEY`.
+- AXZIO stores derived identity reading fields plus email or feedback metadata. Raw questionnaire answers are not persisted.
 
 ## Product flow
 

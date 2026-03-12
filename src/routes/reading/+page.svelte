@@ -1,8 +1,8 @@
 <svelte:head>
-	<title>AXZIO | Identity Reading</title>
+	<title>AXZIO | Pattern Questions</title>
 	<meta
 		name="description"
-		content="Answer ten reflection questions to generate your AXZIO identity reading."
+		content="Answer ten pattern questions to generate your AXZIO identity signal."
 	/>
 </svelte:head>
 
@@ -28,6 +28,7 @@
 	let isSubmitting = false;
 	let submitError = '';
 	let responseField: HTMLTextAreaElement | null = null;
+	let shouldAutofocus = true;
 
 	$: currentQuestion = REFLECTION_QUESTIONS[currentIndex];
 	$: isFirstQuestion = currentIndex === 0;
@@ -35,13 +36,26 @@
 	$: progressLabel = `Question ${currentIndex + 1} of ${totalQuestions}`;
 
 	onMount(() => {
+		shouldAutofocus = !isTouchDevice();
 		void focusResponseField();
 	});
+
+	function isTouchDevice() {
+		if (typeof window === 'undefined') {
+			return false;
+		}
+
+		return (
+			window.matchMedia('(pointer: coarse)').matches ||
+			window.matchMedia('(hover: none)').matches ||
+			navigator.maxTouchPoints > 0
+		);
+	}
 
 	async function focusResponseField() {
 		await tick();
 
-		if (!responseField || isSubmitting) {
+		if (!responseField || isSubmitting || !shouldAutofocus) {
 			return;
 		}
 
@@ -105,7 +119,7 @@
 			if (!response.ok) {
 				submitError =
 					(typeof payload === 'object' && payload && 'error' in payload && payload.error) ||
-					'Unable to generate your identity reading right now.';
+					'Unable to generate your identity signal right now.';
 				return;
 			}
 
@@ -130,7 +144,7 @@
 	<section class="panel">
 		<p class="eyebrow">AXZIO</p>
 		<p class="progress">{progressLabel}</p>
-		<h1>Identity Reading</h1>
+		<h1>Pattern Questions</h1>
 		<p class="question">{currentQuestion}</p>
 
 		<label class="response-field" for="reflection-response">

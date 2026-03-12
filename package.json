@@ -9,6 +9,9 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
   },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.1"
+  },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^6.1.0",
     "@sveltejs/adapter-vercel": "^6.3.3",

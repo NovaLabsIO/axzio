@@ -26,16 +26,19 @@
 	let emailValue = '';
 	let emailMessage = '';
 	let feedbackValue: FeedbackValue | '' = '';
+	let feedbackText = '';
 	let feedbackMessage = '';
+	let feedbackConfirmation = '';
 	let isSavingEmail = false;
 	let isSavingFeedback = false;
 	let cachedCardBlob: Blob | null = null;
 	let cachedCardBlobKey = '';
-	let feedbackSaveController: AbortController | null = null;
 
 	const EXPORT_FILENAME = 'axzio-identity-signal.png';
 	const EMAIL_CAPTURE_STORAGE_KEY = 'axzio.identity-reading-email';
 	const FEEDBACK_CAPTURE_STORAGE_KEY = 'axzio.identity-reading-feedback';
+	const FEEDBACK_TEXT_STORAGE_KEY = 'axzio.identity-reading-feedback-text';
+	const FEEDBACK_SUBMITTED_STORAGE_KEY = 'axzio.identity-reading-feedback-submitted';
 	const SHARE_TITLE = 'AXZIO ID';
 	const CARD_WIDTH = 1080;
 	const CARD_HEIGHT = 1080;
@@ -77,6 +80,11 @@
 		highlight: boolean;
 		font: string;
 		lineHeight: number;
+	};
+
+	type FeedbackSubmissionDraft = {
+		value: FeedbackValue;
+		text: string;
 	};
 
 	const modeThemes: Record<string, AccentTheme> = {
@@ -125,6 +133,8 @@
 		const savedValue = sessionStorage.getItem(IDENTITY_RESULT_STORAGE_KEY);
 		const savedEmail = localStorage.getItem(EMAIL_CAPTURE_STORAGE_KEY);
 		const savedFeedback = localStorage.getItem(FEEDBACK_CAPTURE_STORAGE_KEY);
+		const savedFeedbackText = localStorage.getItem(FEEDBACK_TEXT_STORAGE_KEY);
+		const savedFeedbackSubmitted = localStorage.getItem(FEEDBACK_SUBMITTED_STORAGE_KEY);
 
 		if (savedEmail) {
 			emailValue = savedEmail;
@@ -132,6 +142,14 @@
 
 		if (savedFeedback === 'Yes' || savedFeedback === 'Somewhat' || savedFeedback === 'No') {
 			feedbackValue = savedFeedback;
+		}
+
+		if (savedFeedbackText) {
+			feedbackText = savedFeedbackText;
+		}
+
+		if (savedFeedbackSubmitted === 'true' && feedbackValue) {
+			feedbackConfirmation = 'Feedback saved. You can update it and submit again if your view changes.';
 		}
 
 		if (!savedValue) {
@@ -215,10 +233,33 @@
 		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 	}
 
+	function getFeedbackDraft(): FeedbackSubmissionDraft | null {
+		if (!feedbackValue) {
+			return null;
+		}
+
+		return {
+			value: feedbackValue,
+			text: feedbackText.trim()
+		};
+	}
+
+	function hasSavedFeedbackChanged() {
+		const savedValue = localStorage.getItem(FEEDBACK_CAPTURE_STORAGE_KEY);
+		const savedText = localStorage.getItem(FEEDBACK_TEXT_STORAGE_KEY) ?? '';
+
+		if (!feedbackValue) {
+			return false;
+		}
+
+		return savedValue !== feedbackValue || savedText !== feedbackText.trim();
+	}
+
 	async function submitCapture(payload: {
 		kind: 'email' | 'feedback';
 		email?: string;
 		feedback?: FeedbackValue;
+		feedbackText?: string;
 		reading: IdentityReading;
 	}, signal?: AbortSignal) {
 		const response = await fetch('/api/capture', {
@@ -266,54 +307,66 @@
 
 			localStorage.setItem(EMAIL_CAPTURE_STORAGE_KEY, normalizedEmail);
 			emailValue = normalizedEmail;
-			emailMessage = 'Saved. We will use this email only to follow up on your AXZIO test result.';
+			emailMessage =
+				'Saved for AXZIO private testing review. This build stores your email and result data reliably, but inbox delivery is not configured yet.';
 		} catch {
-			emailMessage = 'Unable to save your email right now. Please try again.';
+			emailMessage =
+				'Unable to save your email right now. Your result stays on screen, but this submission was not captured.';
 		} finally {
 			isSavingEmail = false;
 		}
 	}
 
-	async function saveFeedback(value: FeedbackValue) {
-		if (!identityReading) {
+	function selectFeedback(value: FeedbackValue) {
+		feedbackValue = value;
+		feedbackMessage = '';
+
+		if (feedbackConfirmation && hasSavedFeedbackChanged()) {
+			feedbackConfirmation = '';
+		}
+	}
+
+	function updateFeedbackText(value: string) {
+		feedbackText = value;
+		feedbackMessage = '';
+
+		if (feedbackConfirmation && hasSavedFeedbackChanged()) {
+			feedbackConfirmation = '';
+		}
+	}
+
+	async function saveFeedback() {
+		if (!identityReading || isSavingFeedback) {
 			return;
 		}
 
-		feedbackValue = value;
-		feedbackMessage = 'Saving feedback...';
-		feedbackSaveController?.abort();
-		const controller = new AbortController();
-		feedbackSaveController = controller;
+		const draft = getFeedbackDraft();
+
+		if (!draft) {
+			feedbackMessage = 'Choose Yes, Somewhat, or No before submitting feedback.';
+			return;
+		}
+
+		feedbackMessage = '';
+		feedbackConfirmation = '';
 		isSavingFeedback = true;
 
 		try {
 			await submitCapture({
 				kind: 'feedback',
-				feedback: value,
+				feedback: draft.value,
+				feedbackText: draft.text,
 				reading: identityReading
-			}, controller.signal);
+			});
 
-			if (feedbackSaveController !== controller) {
-				return;
-			}
-
-			localStorage.setItem(FEEDBACK_CAPTURE_STORAGE_KEY, value);
-			feedbackMessage = 'Feedback saved. You can change this anytime.';
-		} catch (error) {
-			if (error instanceof DOMException && error.name === 'AbortError') {
-				return;
-			}
-
-			if (feedbackSaveController !== controller) {
-				return;
-			}
-
-			feedbackMessage = 'Unable to save that change right now. Please try again.';
+			localStorage.setItem(FEEDBACK_CAPTURE_STORAGE_KEY, draft.value);
+			localStorage.setItem(FEEDBACK_TEXT_STORAGE_KEY, draft.text);
+			localStorage.setItem(FEEDBACK_SUBMITTED_STORAGE_KEY, 'true');
+			feedbackConfirmation = 'Thanks. Your feedback was saved for the AXZIO review.';
+		} catch {
+			feedbackMessage = 'Unable to save your feedback right now. Please try again.';
 		} finally {
-			if (feedbackSaveController === controller) {
-				feedbackSaveController = null;
-				isSavingFeedback = false;
-			}
+			isSavingFeedback = false;
 		}
 	}
 
@@ -1036,9 +1089,9 @@
 				</section>
 
 				<section class="section result-section email-panel">
-					<p class="section-label">Send this result to your inbox</p>
+					<p class="section-label">Save this result with your email</p>
 					<p class="supporting-copy email-copy">
-						Keep a copy of your AXZIO ID and result in your inbox.
+						For first-group testing, this stores your email with your AXZIO result so the team can follow up and recreate your card later if needed.
 					</p>
 
 					<form
@@ -1063,7 +1116,7 @@
 							{#if isSavingEmail}
 								Saving...
 							{:else}
-								Email me my AXZIO ID
+								Save Email + Result
 							{/if}
 						</button>
 					</form>
@@ -1079,14 +1132,13 @@
 					<p class="section-label">Quick Feedback</p>
 					<p class="supporting-copy feedback-copy">Did this feel accurate?</p>
 
-					<fieldset class="feedback-form">
+					<fieldset class="feedback-form" disabled={isSavingFeedback}>
 						<legend class="sr-only">Did this feel accurate?</legend>
 
 						<div class="feedback-options">
 							{#each FEEDBACK_OPTIONS as option}
 								<label
 									class:selected={feedbackValue === option}
-									class:saving={isSavingFeedback && feedbackValue === option}
 									class="feedback-option"
 								>
 									<input
@@ -1095,13 +1147,44 @@
 										name="accuracy-feedback"
 										value={option}
 										checked={feedbackValue === option}
-										onchange={() => void saveFeedback(option)}
+										onchange={() => selectFeedback(option)}
 									/>
 									<span>{option}</span>
 								</label>
 							{/each}
 						</div>
+
+						<label class="feedback-text-field" for="feedback-text">
+							<span>Anything that felt off, confusing, or especially accurate?</span>
+							<textarea
+								id="feedback-text"
+								class="feedback-textarea"
+								rows="4"
+								placeholder="Optional"
+								value={feedbackText}
+								oninput={(event) => updateFeedbackText(event.currentTarget.value)}
+							></textarea>
+						</label>
 					</fieldset>
+
+					<button
+						class="secondary-cta feedback-submit"
+						type="button"
+						onclick={saveFeedback}
+						disabled={isSavingFeedback || !feedbackValue}
+					>
+						{#if isSavingFeedback}
+							Submitting...
+						{:else if feedbackConfirmation && !hasSavedFeedbackChanged()}
+							Feedback Submitted
+						{:else}
+							Submit Feedback
+						{/if}
+					</button>
+
+					{#if feedbackConfirmation}
+						<p class="feedback success">{feedbackConfirmation}</p>
+					{/if}
 
 					{#if feedbackMessage}
 						<p class="feedback">{feedbackMessage}</p>
@@ -1400,12 +1483,25 @@
 		margin: 0;
 		padding: 0;
 		border: 0;
+		display: grid;
+		gap: 1rem;
 	}
 
 	.feedback-options {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.75rem;
+	}
+
+	.feedback-text-field {
+		display: grid;
+		gap: 0.7rem;
+	}
+
+	.feedback-text-field span {
+		font-size: 0.95rem;
+		line-height: 1.55;
+		color: rgba(245, 237, 228, 0.8);
 	}
 
 	.feedback-option {
@@ -1431,10 +1527,6 @@
 		border-color: color-mix(in srgb, var(--accent) 28%, rgba(255, 236, 212, 0.14));
 	}
 
-	.feedback-option.saving {
-		box-shadow: inset 0 0 0 1px rgba(255, 244, 227, 0.08);
-	}
-
 	.feedback-option:focus-within {
 		outline: 2px solid var(--accent);
 		outline-offset: 4px;
@@ -1446,25 +1538,38 @@
 		background: rgba(255, 248, 240, 0.08);
 	}
 
+	.feedback-textarea,
 	.email-input {
 		min-width: 0;
 		padding: 0.95rem 1rem;
-		border-radius: 999px;
 		border: 1px solid rgba(255, 236, 212, 0.12);
 		background: rgba(255, 248, 240, 0.05);
 		color: #f7efe5;
 		font: inherit;
 	}
 
+	.email-input {
+		border-radius: 999px;
+	}
+
+	.feedback-textarea {
+		border-radius: 1rem;
+		resize: vertical;
+		line-height: 1.6;
+	}
+
+	.feedback-textarea::placeholder,
 	.email-input::placeholder {
 		color: rgba(240, 220, 198, 0.46);
 	}
 
+	.feedback-textarea:focus-visible,
 	.email-input:focus-visible {
 		outline: 2px solid var(--accent);
 		outline-offset: 3px;
 	}
 
+	.feedback-textarea:disabled,
 	.email-input:disabled {
 		opacity: 0.72;
 		cursor: progress;
@@ -1472,6 +1577,10 @@
 
 	.email-button {
 		white-space: nowrap;
+	}
+
+	.feedback-submit {
+		margin-top: 0.1rem;
 	}
 
 	.text-block p,
@@ -1496,6 +1605,10 @@
 		font-size: 0.95rem;
 		line-height: 1.5;
 		color: rgba(240, 220, 198, 0.72);
+	}
+
+	.feedback.success {
+		color: rgba(226, 242, 220, 0.82);
 	}
 
 	.cta,
