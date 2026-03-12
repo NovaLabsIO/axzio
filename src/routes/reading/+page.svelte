@@ -14,6 +14,8 @@
 		parseIdentityReading,
 		type IdentityReading
 	} from '$lib/identity/schema';
+	import { validateIdentityResponses } from '$lib/identity/signal-validation';
+	import { onMount, tick } from 'svelte';
 
 	const totalQuestions = REFLECTION_QUESTIONS.length;
 
@@ -25,37 +27,64 @@
 	let progressLabel = `Question 1 of ${totalQuestions}`;
 	let isSubmitting = false;
 	let submitError = '';
+	let responseField: HTMLTextAreaElement | null = null;
 
 	$: currentQuestion = REFLECTION_QUESTIONS[currentIndex];
 	$: isFirstQuestion = currentIndex === 0;
 	$: isLastQuestion = currentIndex === totalQuestions - 1;
 	$: progressLabel = `Question ${currentIndex + 1} of ${totalQuestions}`;
 
+	onMount(() => {
+		void focusResponseField();
+	});
+
+	async function focusResponseField() {
+		await tick();
+
+		if (!responseField || isSubmitting) {
+			return;
+		}
+
+		responseField.focus();
+		const cursorPosition = responseField.value.length;
+		responseField.setSelectionRange(cursorPosition, cursorPosition);
+	}
+
 	function updateResponse(value: string) {
 		responses[currentIndex] = value;
 		responses = [...responses];
+		submitError = '';
 	}
 
-	function goBack() {
+	async function goBack() {
 		if (isFirstQuestion || isSubmitting) {
 			return;
 		}
 
 		currentIndex -= 1;
 		submitError = '';
+		await focusResponseField();
 	}
 
-	function goNext() {
+	async function goNext() {
 		if (isLastQuestion || isSubmitting) {
 			return;
 		}
 
 		currentIndex += 1;
 		submitError = '';
+		await focusResponseField();
 	}
 
 	async function generateIdentitySignal() {
 		if (isSubmitting) {
+			return;
+		}
+
+		const validation = validateIdentityResponses(responses);
+
+		if (!validation.isValid) {
+			submitError = validation.message;
 			return;
 		}
 
@@ -107,6 +136,7 @@
 		<label class="response-field" for="reflection-response">
 			<span class="label">Your reflection</span>
 			<textarea
+				bind:this={responseField}
 				id="reflection-response"
 				rows="7"
 				value={responses[currentIndex]}
@@ -121,6 +151,25 @@
 		{/if}
 
 		<div class="actions">
+			{#if isLastQuestion}
+				<button
+					class="primary"
+					type="button"
+					onclick={generateIdentitySignal}
+					disabled={isSubmitting}
+				>
+					{#if isSubmitting}
+						Generating...
+					{:else}
+						Generate Identity Signal
+					{/if}
+				</button>
+			{:else}
+				<button class="primary" type="button" onclick={goNext} disabled={isSubmitting}>
+					Next
+				</button>
+			{/if}
+
 			<button
 				class="secondary"
 				type="button"
@@ -129,35 +178,11 @@
 			>
 				Back
 			</button>
-
-			{#if isLastQuestion}
-				<button class="primary" type="button" onclick={generateIdentitySignal} disabled={isSubmitting}>
-					{#if isSubmitting}
-						Generating...
-					{:else}
-						Generate Identity Signal
-					{/if}
-				</button>
-			{:else}
-				<button class="primary" type="button" onclick={goNext} disabled={isSubmitting}>Next</button>
-			{/if}
 		</div>
 	</section>
 </main>
 
 <style>
-	:global(body) {
-		margin: 0;
-		font-family:
-			"IBM Plex Sans",
-			"Avenir Next",
-			sans-serif;
-		background:
-			radial-gradient(circle at top, rgba(216, 196, 165, 0.36), transparent 42%),
-			#f4efe5;
-		color: #1e1b18;
-	}
-
 	.shell {
 		min-height: 100vh;
 		display: grid;
@@ -169,6 +194,16 @@
 		width: min(100%, 42rem);
 		display: grid;
 		gap: 1.25rem;
+		padding: clamp(1.6rem, 4vw, 2.3rem);
+		border-radius: 1.9rem;
+		background:
+			radial-gradient(circle at top left, rgba(181, 156, 255, 0.12), transparent 38%),
+			radial-gradient(circle at 84% 18%, rgba(241, 146, 88, 0.1), transparent 24%),
+			linear-gradient(145deg, rgba(12, 11, 19, 0.94), rgba(20, 16, 28, 0.9));
+		border: 1px solid rgba(255, 236, 212, 0.1);
+		box-shadow:
+			0 30px 72px rgba(0, 0, 0, 0.34),
+			inset 0 1px 0 rgba(255, 244, 227, 0.04);
 	}
 
 	.eyebrow,
@@ -178,7 +213,7 @@
 		font-size: 0.75rem;
 		letter-spacing: 0.16em;
 		text-transform: uppercase;
-		color: #6b5d4d;
+		color: var(--app-text-soft);
 	}
 
 	h1 {
@@ -193,7 +228,7 @@
 		margin: 0;
 		font-size: clamp(1.25rem, 3vw, 1.7rem);
 		line-height: 1.4;
-		color: #2f2823;
+		color: rgba(248, 240, 230, 0.92);
 	}
 
 	.response-field {
@@ -203,15 +238,18 @@
 
 	textarea {
 		width: 100%;
-		box-sizing: border-box;
 		padding: 1rem;
-		border: 1px solid rgba(49, 43, 38, 0.18);
+		border: 1px solid rgba(255, 236, 212, 0.12);
 		border-radius: 1rem;
-		background: rgba(255, 251, 245, 0.72);
-		color: #1e1b18;
-		font: inherit;
+		background:
+			linear-gradient(180deg, rgba(255, 248, 240, 0.06), rgba(255, 248, 240, 0.04));
+		color: #f7efe5;
 		line-height: 1.6;
 		resize: vertical;
+	}
+
+	textarea::placeholder {
+		color: rgba(240, 220, 198, 0.46);
 	}
 
 	textarea:disabled {
@@ -219,7 +257,7 @@
 	}
 
 	textarea:focus-visible {
-		outline: 2px solid #8b765d;
+		outline: 2px solid #f4b88f;
 		outline-offset: 2px;
 	}
 
@@ -227,9 +265,10 @@
 		margin: 0;
 		padding: 0.9rem 1rem;
 		border-radius: 1rem;
-		background: rgba(133, 42, 42, 0.1);
-		color: #7a1f1f;
+		background: rgba(164, 60, 60, 0.16);
+		color: #ffd4cb;
 		line-height: 1.5;
+		border: 1px solid rgba(255, 178, 164, 0.16);
 	}
 
 	.actions {
@@ -242,7 +281,6 @@
 		border: 0;
 		border-radius: 999px;
 		padding: 0.95rem 1.4rem;
-		font: inherit;
 		font-weight: 600;
 		cursor: pointer;
 		transition:
@@ -257,7 +295,7 @@
 	}
 
 	button:focus-visible {
-		outline: 2px solid #8b765d;
+		outline: 2px solid #f4b88f;
 		outline-offset: 3px;
 	}
 
@@ -267,20 +305,23 @@
 	}
 
 	.primary {
-		background: #1e1b18;
-		color: #f8f3ea;
+		background:
+			linear-gradient(135deg, #f4b88f, color-mix(in srgb, #f4b88f 60%, #f19258 40%));
+		color: #140f11;
 		margin-left: auto;
+		box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
 	}
 
 	.primary:hover:not(:disabled),
 	.primary:focus-visible:not(:disabled) {
-		background: #312b26;
+		background:
+			linear-gradient(135deg, #f6c39c, color-mix(in srgb, #f6c39c 60%, #f19258 40%));
 	}
 
 	.secondary {
-		background: transparent;
-		color: #1e1b18;
-		border: 1px solid rgba(49, 43, 38, 0.18);
+		background: rgba(255, 248, 240, 0.05);
+		color: #f7efe5;
+		border: 1px solid rgba(255, 236, 212, 0.12);
 	}
 
 	@media (max-width: 640px) {

@@ -9,6 +9,7 @@ import {
 	parseIdentityReading,
 	type IdentityReading
 } from '$lib/identity/schema';
+import { validateIdentityResponses } from '$lib/identity/signal-validation';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/responses';
 const OPENAI_MODEL = 'gpt-4.1';
@@ -136,6 +137,12 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 			{ error: 'Expected a JSON body with a responses array of 10 strings.' },
 			{ status: 400 }
 		);
+	}
+
+	const validation = validateIdentityResponses(parsedRequest.responses);
+
+	if (!validation.isValid) {
+		return json({ error: validation.message }, { status: 400 });
 	}
 
 	let openAIResponse: Response;

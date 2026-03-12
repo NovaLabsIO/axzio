@@ -43,7 +43,7 @@
 		</div>
 
 		<div class="field">
-			<h2>Growth Vector</h2>
+			<h2>Growth Focus</h2>
 			<p class="value">{growthVector}</p>
 		</div>
 	</div>

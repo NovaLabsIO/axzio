@@ -2,12 +2,17 @@
 	<title>AXZIO | ID</title>
 	<meta
 		name="description"
-		content="Your AXZIO identity reading result."
+		content="Your AXZIO identity result."
 	/>
 </svelte:head>
 
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import {
+		getGrowthVectorDirectionCopy,
+		getGrowthVectorHeroCopy,
+		getGrowthVectorWhyCopy
+	} from '$lib/identity/growth-vector-copy';
 	import {
 		IDENTITY_RESULT_STORAGE_KEY,
 		parseIdentityReading,
@@ -20,29 +25,58 @@
 	let shareMessage = '';
 	let emailValue = '';
 	let emailMessage = '';
+	let feedbackValue: FeedbackValue | '' = '';
+	let feedbackMessage = '';
+	let isSavingEmail = false;
+	let isSavingFeedback = false;
 	let cachedCardBlob: Blob | null = null;
 	let cachedCardBlobKey = '';
+	let feedbackSaveController: AbortController | null = null;
 
 	const EXPORT_FILENAME = 'axzio-identity-signal.png';
 	const EMAIL_CAPTURE_STORAGE_KEY = 'axzio.identity-reading-email';
+	const FEEDBACK_CAPTURE_STORAGE_KEY = 'axzio.identity-reading-feedback';
 	const SHARE_TITLE = 'AXZIO ID';
 	const CARD_WIDTH = 1080;
 	const CARD_HEIGHT = 1080;
-	const CARD_PADDING = 56;
+	const CARD_PADDING = 48;
 	const SURFACE_RADIUS = 36;
 	const FIELD_RADIUS = 24;
-	const LABEL_FONT = '600 21px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const TITLE_FONT = '600 34px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const HERO_FONT = '600 72px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const VALUE_FONT = '600 42px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const BODY_FONT = '400 27px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const SMALL_BODY_FONT = '400 24px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const CARD_INNER_PADDING = 30;
+	const CARD_SECTION_GAP = 18;
+	const CARD_FOOTER_HEIGHT = 74;
+	const FIELD_TEXT_INSET_X = 32;
+	const FIELD_LABEL_Y = 24;
+	const FIELD_CONTENT_Y = 74;
+	const FIELD_BOTTOM_PADDING = 28;
+	const LABEL_FONT = '600 20px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const HERO_FONT = '600 64px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const VALUE_FONT = '600 34px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const SMALL_BODY_FONT = '400 22px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const COMPACT_BODY_FONT = '400 20px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const TIGHT_BODY_FONT = '400 18px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const VALUE_LINE_HEIGHT = 42;
+	const BODY_LINE_HEIGHT = 32;
+	const COMPACT_BODY_LINE_HEIGHT = 29;
+	const TIGHT_BODY_LINE_HEIGHT = 27;
+	const FEEDBACK_OPTIONS = ['Yes', 'Somewhat', 'No'] as const;
+
+	type FeedbackValue = (typeof FEEDBACK_OPTIONS)[number];
 
 	type AccentTheme = {
 		accent: string;
 		accentSoft: string;
 		accentGlow: string;
 		surfaceGlow: string;
+	};
+
+	type FieldLayout = {
+		lines: string[];
+		height: number;
+		body: boolean;
+		highlight: boolean;
+		font: string;
+		lineHeight: number;
 	};
 
 	const modeThemes: Record<string, AccentTheme> = {
@@ -90,9 +124,14 @@
 	onMount(() => {
 		const savedValue = sessionStorage.getItem(IDENTITY_RESULT_STORAGE_KEY);
 		const savedEmail = localStorage.getItem(EMAIL_CAPTURE_STORAGE_KEY);
+		const savedFeedback = localStorage.getItem(FEEDBACK_CAPTURE_STORAGE_KEY);
 
 		if (savedEmail) {
 			emailValue = savedEmail;
+		}
+
+		if (savedFeedback === 'Yes' || savedFeedback === 'Somewhat' || savedFeedback === 'No') {
+			feedbackValue = savedFeedback;
 		}
 
 		if (!savedValue) {
@@ -133,19 +172,80 @@
 
 	function createWhyThisFits(reading: IdentityReading) {
 		const secondaryMode = reading.secondaryMode.trim().toLowerCase();
+		const whyGrowthFits = getGrowthVectorWhyCopy(reading.growthVector);
 
-		return `${reading.archetype} fits because your reading leans first toward ${reading.primaryMode.toLowerCase()} and is reinforced by ${secondaryMode}, which points to the pattern of ${reading.corePattern.trim().replace(/\.$/, '').toLowerCase()}. The move toward ${reading.growthVector.toLowerCase()} makes sense as the clearest direction for working through your current challenge.`;
+		return `Your answers point most strongly toward ${reading.primaryMode.toLowerCase()}, with ${secondaryMode} close behind. That combination aligns with the ${reading.archetype} archetype. ${whyGrowthFits}`;
+	}
+
+	function createCorePatternInterpretation(reading: IdentityReading) {
+		return `Right now, ${reading.primaryMode} appears to be your strongest mode, shaped by ${reading.secondaryMode.toLowerCase()} as a secondary influence. ${reading.corePattern}`;
+	}
+
+	const primaryModeContext: Record<string, string> = {
+		People: 'Relationships, care, and other people are driving most of your attention right now.',
+		Pleasure: 'Relief, enjoyment, and what feels emotionally alive are driving you most right now.',
+		Production: 'Momentum, output, and getting something done are driving you most right now.',
+		Reflection: 'Meaning, self-understanding, and inner clarity are driving you most right now.'
+	};
+
+	const secondaryModeContext: Record<string, string> = {
+		People: 'It adds a relational lens, shaping how you respond to what and who is around you.',
+		Pleasure: 'It adds an emotional lens, shaping what feels satisfying, relieving, or worth moving toward.',
+		Production: 'It adds a practical lens, shaping how strongly you orient toward structure, progress, and results.',
+		Reflection: 'It adds an interpretive lens, shaping how much pause, meaning, and self-observation color your choices.'
+	};
+
+	function getPrimaryModeExplanation(mode: string) {
+		return primaryModeContext[mode] ?? 'This is the signal currently driving most of your energy and attention.';
+	}
+
+	function getSecondaryModeExplanation(mode: string, primaryMode: string) {
+		const secondaryExplanation =
+			secondaryModeContext[mode] ??
+			'It adds a second layer of influence that colors how your main drive tends to show up.';
+
+		return `${secondaryExplanation.replace(/\.$/, '')}, working alongside ${primaryMode.toLowerCase()} rather than replacing it.`;
+	}
+
+	function getGrowthVectorExplanation(vector: string) {
+		return getGrowthVectorHeroCopy(vector);
 	}
 
 	function isValidEmail(email: string) {
 		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 	}
 
-	function saveEmailCapture() {
+	async function submitCapture(payload: {
+		kind: 'email' | 'feedback';
+		email?: string;
+		feedback?: FeedbackValue;
+		reading: IdentityReading;
+	}, signal?: AbortSignal) {
+		const response = await fetch('/api/capture', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(payload),
+			signal
+		});
+
+		const result = (await response.json()) as { error?: string };
+
+		if (!response.ok) {
+			throw new Error(result.error ?? 'Capture failed.');
+		}
+	}
+
+	async function saveEmailCapture() {
+		if (!identityReading || isSavingEmail) {
+			return;
+		}
+
 		const normalizedEmail = emailValue.trim().toLowerCase();
 
 		if (!normalizedEmail) {
-			emailMessage = 'Enter an email if you want to save this for future inbox delivery.';
+			emailMessage = 'Enter an email address to send this result.';
 			return;
 		}
 
@@ -154,9 +254,97 @@
 			return;
 		}
 
-		localStorage.setItem(EMAIL_CAPTURE_STORAGE_KEY, normalizedEmail);
-		emailValue = normalizedEmail;
-		emailMessage = 'Saved locally on this device. Inbox delivery is coming soon.';
+		isSavingEmail = true;
+		emailMessage = '';
+
+		try {
+			await submitCapture({
+				kind: 'email',
+				email: normalizedEmail,
+				reading: identityReading
+			});
+
+			localStorage.setItem(EMAIL_CAPTURE_STORAGE_KEY, normalizedEmail);
+			emailValue = normalizedEmail;
+			emailMessage = 'Saved. We will use this email only to follow up on your AXZIO test result.';
+		} catch {
+			emailMessage = 'Unable to save your email right now. Please try again.';
+		} finally {
+			isSavingEmail = false;
+		}
+	}
+
+	async function saveFeedback(value: FeedbackValue) {
+		if (!identityReading) {
+			return;
+		}
+
+		feedbackValue = value;
+		feedbackMessage = 'Saving feedback...';
+		feedbackSaveController?.abort();
+		const controller = new AbortController();
+		feedbackSaveController = controller;
+		isSavingFeedback = true;
+
+		try {
+			await submitCapture({
+				kind: 'feedback',
+				feedback: value,
+				reading: identityReading
+			}, controller.signal);
+
+			if (feedbackSaveController !== controller) {
+				return;
+			}
+
+			localStorage.setItem(FEEDBACK_CAPTURE_STORAGE_KEY, value);
+			feedbackMessage = 'Feedback saved. You can change this anytime.';
+		} catch (error) {
+			if (error instanceof DOMException && error.name === 'AbortError') {
+				return;
+			}
+
+			if (feedbackSaveController !== controller) {
+				return;
+			}
+
+			feedbackMessage = 'Unable to save that change right now. Please try again.';
+		} finally {
+			if (feedbackSaveController === controller) {
+				feedbackSaveController = null;
+				isSavingFeedback = false;
+			}
+		}
+	}
+
+	function breakWordToWidth(
+		context: CanvasRenderingContext2D,
+		word: string,
+		maxWidth: number
+	) {
+		const segments: string[] = [];
+		let remaining = word;
+
+		while (remaining && context.measureText(remaining).width > maxWidth) {
+			let sliceLength = remaining.length - 1;
+
+			while (
+				sliceLength > 1 &&
+				context.measureText(`${remaining.slice(0, sliceLength)}-`).width > maxWidth
+			) {
+				sliceLength -= 1;
+			}
+
+			const slice = remaining.slice(0, sliceLength);
+			segments.push(`${slice}-`);
+			remaining = remaining.slice(sliceLength);
+		}
+
+		if (remaining) {
+			segments.push(remaining);
+		}
+
+		return segments.length ? segments : [word];
 	}
 
 	function drawRoundedRect(
@@ -226,7 +414,11 @@
 			return [''];
 		}
 
-		const words = normalizedText.split(' ');
+		const words = normalizedText
+			.split(' ')
+			.flatMap((word) =>
+				context.measureText(word).width > maxWidth ? breakWordToWidth(context, word, maxWidth) : [word]
+			);
 		const lines: string[] = [];
 		let currentLine = '';
 
@@ -278,117 +470,125 @@
 		return lines;
 	}
 
-	function drawTextBlock(
+	function createFieldLayout(
 		context: CanvasRenderingContext2D,
-		text: string,
-		x: number,
-		y: number,
-		maxWidth: number,
-		lineHeight: number,
-		maxLines: number
-	) {
-		const lines = wrapText(context, text, maxWidth, maxLines);
+		value: string,
+		width: number,
+		options?: {
+			body?: boolean;
+			maxLines?: number;
+			highlight?: boolean;
+			minHeight?: number;
+			font?: string;
+			lineHeight?: number;
+		}
+	): FieldLayout {
+		const body = options?.body ?? false;
+		const font = options?.font ?? (body ? SMALL_BODY_FONT : VALUE_FONT);
+		const lineHeight = options?.lineHeight ?? (body ? BODY_LINE_HEIGHT : VALUE_LINE_HEIGHT);
+		const maxLines = options?.maxLines ?? (body ? 4 : 2);
+		const minHeight = options?.minHeight ?? (body ? 138 : 146);
+		const contentWidth = width - FIELD_TEXT_INSET_X * 2;
 
-		lines.forEach((line, index) => {
-			context.fillText(line, x, y + index * lineHeight);
-		});
+		context.save();
+		context.font = font;
+		const lines = wrapText(context, value, contentWidth, maxLines);
+		context.restore();
+
+		const height = Math.max(
+			minHeight,
+			FIELD_CONTENT_Y + lines.length * lineHeight + FIELD_BOTTOM_PADDING
+		);
+
+		return {
+			lines,
+			height,
+			body,
+			highlight: options?.highlight ?? false,
+			font,
+			lineHeight
+		};
 	}
 
-	function drawDivider(
+	function createAdaptiveBodyFieldLayout(
 		context: CanvasRenderingContext2D,
-		x: number,
-		y: number,
-		width: number
+		value: string,
+		width: number,
+		options?: { maxLines?: number; highlight?: boolean; minHeight?: number }
 	) {
-		context.save();
-		context.strokeStyle = 'rgba(255, 240, 224, 0.12)';
-		context.lineWidth = 2;
-		context.beginPath();
-		context.moveTo(x, y);
-		context.lineTo(x + width, y);
-		context.stroke();
-		context.restore();
+		const fontVariants = [
+			{ font: SMALL_BODY_FONT, lineHeight: BODY_LINE_HEIGHT },
+			{ font: COMPACT_BODY_FONT, lineHeight: COMPACT_BODY_LINE_HEIGHT },
+			{ font: TIGHT_BODY_FONT, lineHeight: TIGHT_BODY_LINE_HEIGHT }
+		];
+
+		let fallbackLayout: FieldLayout | null = null;
+
+		for (const variant of fontVariants) {
+			const layout = createFieldLayout(context, value, width, {
+				body: true,
+				maxLines: options?.maxLines,
+				highlight: options?.highlight,
+				minHeight: options?.minHeight,
+				font: variant.font,
+				lineHeight: variant.lineHeight
+			});
+
+			fallbackLayout = layout;
+
+			if (!layout.lines.some((line) => line.endsWith('...'))) {
+				return layout;
+			}
+		}
+
+		return fallbackLayout ?? createFieldLayout(context, value, width, {
+			body: true,
+			maxLines: options?.maxLines,
+			highlight: options?.highlight,
+			minHeight: options?.minHeight
+		});
 	}
 
 	function drawField(
 		context: CanvasRenderingContext2D,
 		label: string,
-		value: string,
+		layout: FieldLayout,
 		x: number,
 		y: number,
 		width: number,
-		height: number,
-		options?: { body?: boolean; maxLines?: number; highlight?: boolean; theme?: AccentTheme }
+		theme: AccentTheme
 	) {
-		const theme = options?.theme ?? modeThemes.Reflection;
-		const panelFill = options?.highlight ? 'rgba(26, 21, 32, 0.88)' : 'rgba(15, 13, 21, 0.82)';
-		const border = options?.highlight ? 'rgba(255, 236, 212, 0.18)' : 'rgba(255, 236, 212, 0.1)';
+		const panelFill = layout.highlight ? 'rgba(26, 21, 32, 0.9)' : 'rgba(15, 13, 21, 0.84)';
+		const border = layout.highlight ? 'rgba(255, 236, 212, 0.18)' : 'rgba(255, 236, 212, 0.1)';
 		const glow = context.createRadialGradient(x + 44, y + 36, 0, x + 44, y + 36, width * 0.8);
 		glow.addColorStop(0, theme.surfaceGlow);
 		glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
-		fillRoundedRect(context, x, y, width, height, FIELD_RADIUS, panelFill);
+		fillRoundedRect(context, x, y, width, layout.height, FIELD_RADIUS, panelFill);
 		context.save();
-		drawRoundedRect(context, x, y, width, height, FIELD_RADIUS);
+		drawRoundedRect(context, x, y, width, layout.height, FIELD_RADIUS);
 		context.clip();
 		context.fillStyle = glow;
-		context.fillRect(x, y, width, height);
+		context.fillRect(x, y, width, layout.height);
 		context.restore();
-		strokeRoundedRect(context, x, y, width, height, FIELD_RADIUS, border, 2);
+		strokeRoundedRect(context, x, y, width, layout.height, FIELD_RADIUS, border, 2);
 
 		context.save();
 		context.textBaseline = 'top';
-		context.fillStyle = options?.highlight ? 'rgba(255, 231, 203, 0.8)' : 'rgba(240, 220, 198, 0.72)';
+		context.fillStyle = layout.highlight ? 'rgba(255, 231, 203, 0.8)' : 'rgba(240, 220, 198, 0.72)';
 		context.font = LABEL_FONT;
-		context.fillText(label.toUpperCase(), x + 34, y + 26);
+		context.fillText(label.toUpperCase(), x + FIELD_TEXT_INSET_X, y + FIELD_LABEL_Y);
 
 		context.fillStyle = '#f6efe7';
+		context.font = layout.font;
 
-		if (options?.body) {
-			context.font = SMALL_BODY_FONT;
-			drawTextBlock(context, value, x + 34, y + 86, width - 68, 46, options.maxLines ?? 6);
-		} else {
-			context.font = VALUE_FONT;
-			drawTextBlock(context, value, x + 34, y + 84, width - 68, 64, options?.maxLines ?? 2);
-		}
-
-		context.restore();
-	}
-
-	function drawHeroField(
-		context: CanvasRenderingContext2D,
-		label: string,
-		value: string,
-		x: number,
-		y: number,
-		width: number,
-		height: number,
-		theme: AccentTheme
-	) {
-		const heroGradient = context.createLinearGradient(x, y, x + width, y + height);
-		heroGradient.addColorStop(0, 'rgba(16, 14, 24, 0.98)');
-		heroGradient.addColorStop(1, 'rgba(36, 24, 37, 0.96)');
-
-		fillRoundedRect(context, x, y, width, height, FIELD_RADIUS + 6, heroGradient);
-		const glow = context.createRadialGradient(x + width * 0.18, y + height * 0.2, 0, x + width * 0.18, y + height * 0.2, width * 0.6);
-		glow.addColorStop(0, theme.accentGlow);
-		glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-		context.save();
-		drawRoundedRect(context, x, y, width, height, FIELD_RADIUS + 6);
-		context.clip();
-		context.fillStyle = glow;
-		context.fillRect(x, y, width, height);
-		context.restore();
-		strokeRoundedRect(context, x, y, width, height, FIELD_RADIUS + 6, 'rgba(255, 238, 212, 0.16)', 2);
-
-		context.save();
-		context.textBaseline = 'top';
-		context.fillStyle = 'rgba(247, 228, 205, 0.82)';
-		context.font = LABEL_FONT;
-		context.fillText(label.toUpperCase(), x + 36, y + 34);
-		context.fillStyle = '#fbf4eb';
-		context.font = HERO_FONT;
-		drawTextBlock(context, value, x + 36, y + 86, width - 72, 74, 2);
+		layout.lines.forEach((line, index) => {
+			context.fillText(
+				line,
+				x + FIELD_TEXT_INSET_X,
+				y + FIELD_CONTENT_Y + index * layout.lineHeight
+			);
+		});
 		context.restore();
 	}
 
@@ -419,6 +619,7 @@
 		const glow = context.createRadialGradient(260, 160, 0, 260, 160, 500);
 		glow.addColorStop(0, theme.accentGlow);
 		glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+		context.fillStyle = glow;
 		context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
 		const emberGlow = context.createRadialGradient(860, 820, 0, 860, 820, 440);
@@ -455,91 +656,141 @@
 		context.textBaseline = 'top';
 		context.fillStyle = 'rgba(245, 226, 203, 0.72)';
 		context.font = LABEL_FONT;
-		context.fillText('AXZIO ID', CARD_PADDING + 30, CARD_PADDING + 28);
+		context.fillText('AXZIO ID', CARD_PADDING + CARD_INNER_PADDING, CARD_PADDING + 24);
 		context.fillStyle = '#f7efe5';
-		context.font = TITLE_FONT;
-		context.fillText('Identity readout', CARD_PADDING + 30, CARD_PADDING + 66);
+		context.font = HERO_FONT;
+		context.fillText(reading.archetype, CARD_PADDING + CARD_INNER_PADDING, CARD_PADDING + 58);
+		context.fillStyle = 'rgba(240, 220, 198, 0.72)';
+		context.font = '500 22px "IBM Plex Sans", "Avenir Next", sans-serif';
+		context.fillText(
+			`${reading.primaryMode} • ${reading.secondaryMode} • ${reading.growthVector}`,
+			CARD_PADDING + CARD_INNER_PADDING,
+			CARD_PADDING + 132
+		);
 
-		const innerX = CARD_PADDING + 30;
-		const innerY = CARD_PADDING + 122;
-		const innerWidth = CARD_WIDTH - CARD_PADDING * 2 - 60;
+		const innerX = CARD_PADDING + CARD_INNER_PADDING;
+		const innerY = CARD_PADDING + 182;
+		const innerWidth = CARD_WIDTH - CARD_PADDING * 2 - CARD_INNER_PADDING * 2;
 		const columnGap = 20;
 		const fieldWidth = (innerWidth - columnGap) / 2;
+		const footerTextY = CARD_HEIGHT - CARD_PADDING - CARD_FOOTER_HEIGHT + 18;
+		const contentBottomLimit = footerTextY - 22;
+		const layoutVariants = [
+			{ coreLines: 5, challengeLines: 3, actionLines: 5 },
+			{ coreLines: 4, challengeLines: 3, actionLines: 5 },
+			{ coreLines: 4, challengeLines: 2, actionLines: 4 },
+			{ coreLines: 3, challengeLines: 2, actionLines: 4 }
+		];
 
-		drawHeroField(context, 'Archetype', reading.archetype, innerX, innerY, innerWidth, 194, theme);
-		drawField(context, 'Primary Mode', reading.primaryMode, innerX, innerY + 214, fieldWidth, 158, {
-			theme,
-			maxLines: 2
-		});
+		let selectedLayout = null as
+			| {
+					primary: FieldLayout;
+					secondary: FieldLayout;
+					core: FieldLayout;
+					challenge: FieldLayout;
+					growth: FieldLayout;
+					action: FieldLayout;
+					totalHeight: number;
+			  }
+			| null;
+
+		for (const variant of layoutVariants) {
+			const primary = createFieldLayout(context, reading.primaryMode, fieldWidth, {
+				minHeight: 144
+			});
+			const secondary = createFieldLayout(context, reading.secondaryMode, fieldWidth, {
+				minHeight: 144
+			});
+			const core = createFieldLayout(context, reading.corePattern, innerWidth, {
+				body: true,
+				highlight: true,
+				maxLines: variant.coreLines,
+				minHeight: 188
+			});
+			const challenge = createFieldLayout(context, reading.currentChallenge, innerWidth, {
+				body: true,
+				maxLines: variant.challengeLines,
+				minHeight: 126
+			});
+			const growth = createFieldLayout(context, reading.growthVector, fieldWidth, {
+				maxLines: 2,
+				minHeight: 154
+			});
+			const action = createAdaptiveBodyFieldLayout(context, reading.suggestedNextAction, fieldWidth, {
+				highlight: true,
+				maxLines: variant.actionLines,
+				minHeight: 174
+			});
+			const rowOneHeight = Math.max(primary.height, secondary.height);
+			const rowThreeHeight = Math.max(growth.height, action.height);
+			const totalHeight =
+				rowOneHeight +
+				CARD_SECTION_GAP +
+				core.height +
+				CARD_SECTION_GAP +
+				challenge.height +
+				CARD_SECTION_GAP +
+				rowThreeHeight;
+
+			selectedLayout = {
+				primary,
+				secondary,
+				core,
+				challenge,
+				growth,
+				action,
+				totalHeight
+			};
+
+			if (innerY + totalHeight <= contentBottomLimit) {
+				break;
+			}
+		}
+
+		if (!selectedLayout) {
+			throw new Error('Card layout generation failed.');
+		}
+
+		const rowOneHeight = Math.max(selectedLayout.primary.height, selectedLayout.secondary.height);
+		const rowThreeHeight = Math.max(selectedLayout.growth.height, selectedLayout.action.height);
+		const coreY = innerY + rowOneHeight + CARD_SECTION_GAP;
+		const challengeY = coreY + selectedLayout.core.height + CARD_SECTION_GAP;
+		const bottomRowY = challengeY + selectedLayout.challenge.height + CARD_SECTION_GAP;
+
+		drawField(context, 'Primary Mode', selectedLayout.primary, innerX, innerY, fieldWidth, theme);
 		drawField(
 			context,
 			'Secondary Mode',
-			reading.secondaryMode,
+			selectedLayout.secondary,
 			innerX + fieldWidth + columnGap,
-			innerY + 214,
+			innerY,
 			fieldWidth,
-			158,
-			{ maxLines: 2, theme }
+			theme
 		);
-		drawField(
-			context,
-			'Core Pattern',
-			reading.corePattern,
-			innerX,
-			innerY + 392,
-			innerWidth,
-			194,
-			{
-				body: true,
-				maxLines: 4,
-				highlight: true,
-				theme
-			}
-		);
+		drawField(context, 'Core Pattern', selectedLayout.core, innerX, coreY, innerWidth, theme);
 		drawField(
 			context,
 			'Current Challenge',
-			reading.currentChallenge,
+			selectedLayout.challenge,
 			innerX,
-			innerY + 606,
+			challengeY,
 			innerWidth,
-			132,
-			{
-				body: true,
-				maxLines: 2,
-				theme
-			}
+			theme
 		);
-		drawField(
-			context,
-			'Growth Vector',
-			reading.growthVector,
-			innerX,
-			innerY + 758,
-			fieldWidth,
-			148,
-			{ maxLines: 2, theme }
-		);
+		drawField(context, 'Growth Focus', selectedLayout.growth, innerX, bottomRowY, fieldWidth, theme);
 		drawField(
 			context,
 			'Next Action',
-			reading.suggestedNextAction,
+			selectedLayout.action,
 			innerX + fieldWidth + columnGap,
-			innerY + 758,
+			bottomRowY,
 			fieldWidth,
-			148,
-			{
-				body: true,
-				maxLines: 3,
-				highlight: true,
-				theme
-			}
+			theme
 		);
 
-		drawDivider(context, innerX, CARD_HEIGHT - CARD_PADDING - 86, innerWidth);
 		context.fillStyle = 'rgba(240, 220, 198, 0.72)';
 		context.font = '500 20px "IBM Plex Sans", "Avenir Next", sans-serif';
-		context.fillText('axzio.ai', innerX, CARD_HEIGHT - CARD_PADDING - 60);
+		context.fillText('axzio.ai', innerX, footerTextY);
 		context.restore();
 
 		return await new Promise<Blob>((resolve, reject) => {
@@ -612,36 +863,65 @@
 
 		shareMessage = '';
 
-		if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
-			shareMessage = 'Native sharing is not available on this device.';
-			return;
-		}
-
 		isSharing = true;
 
 		try {
 			const text = createShareText(identityReading);
-			const shareData: ShareData = {
-				title: SHARE_TITLE,
-				text
-			};
+			let shared = false;
 
-			if (typeof File !== 'undefined' && typeof navigator.canShare === 'function') {
+			if (
+				typeof navigator !== 'undefined' &&
+				typeof navigator.share === 'function' &&
+				typeof File !== 'undefined' &&
+				typeof navigator.canShare === 'function'
+			) {
 				const blob = await createCardImageBlob();
 				const file = new File([blob], EXPORT_FILENAME, { type: 'image/png' });
 
 				if (navigator.canShare({ files: [file] })) {
-					shareData.files = [file];
+					await navigator.share({
+						title: SHARE_TITLE,
+						text,
+						files: [file]
+					});
+					shared = true;
 				}
 			}
 
-			await navigator.share(shareData);
+			if (!shared && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+				await navigator.share({
+					title: SHARE_TITLE,
+					text
+				});
+				shared = true;
+			}
+
+			if (!shared) {
+				if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+					await navigator.clipboard.writeText(text);
+					shareMessage = 'Native share is unavailable here. A share-ready summary was copied to your clipboard.';
+				} else {
+					shareMessage = 'Native share is unavailable here. Use Export Card to save the PNG.';
+				}
+			}
 		} catch (error) {
 			if (error instanceof DOMException && error.name === 'AbortError') {
 				shareMessage = '';
 			} else {
-				console.error('Failed to share identity card.', error);
-				shareMessage = 'Sharing failed. Try Export Card instead.';
+				const text = createShareText(identityReading);
+
+				try {
+					if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+						await navigator.clipboard.writeText(text);
+						shareMessage =
+							'Sharing failed in this environment. A share-ready summary was copied to your clipboard.';
+					} else {
+						shareMessage = 'Sharing failed in this environment. Try Export Card instead.';
+					}
+				} catch {
+					console.error('Failed to share identity card.', error);
+					shareMessage = 'Sharing failed in this environment. Try Export Card instead.';
+				}
 			}
 		} finally {
 			isSharing = false;
@@ -656,129 +936,186 @@
 				<div class="hero-copy">
 					<p class="eyebrow">AXZIO ID</p>
 					<h1>{identityReading.archetype}</h1>
-					<p class="subheading">
-						A concise identity readout built from your current pattern, tension, and direction.
+					<p class="hero-summary">
+						Your reflections point to this identity pattern and the next move it suggests.
 					</p>
 				</div>
 
-				<div class="hero-band">
-					<div class="hero-pill signal-pill">
-						<span>Primary</span>
-						<strong>{identityReading.primaryMode}</strong>
-					</div>
-					<div class="hero-pill">
-						<span>Secondary</span>
-						<strong>{identityReading.secondaryMode}</strong>
-					</div>
-					<div class="hero-pill signal-pill">
-						<span>Growth</span>
-						<strong>{identityReading.growthVector}</strong>
+				<div class="hero-signals">
+					<div class="hero-band">
+						<div class="hero-pill signal-pill">
+							<span>Primary Mode</span>
+							<strong>{identityReading.primaryMode}</strong>
+							<p>{getPrimaryModeExplanation(identityReading.primaryMode)}</p>
+						</div>
+						<div class="hero-pill">
+							<span>Secondary Mode</span>
+							<strong>{identityReading.secondaryMode}</strong>
+							<p>
+								{getSecondaryModeExplanation(
+									identityReading.secondaryMode,
+									identityReading.primaryMode
+								)}
+							</p>
+						</div>
+						<div class="hero-pill signal-pill">
+							<span>Growth Focus</span>
+							<strong>{identityReading.growthVector}</strong>
+							<p>{getGrowthVectorExplanation(identityReading.growthVector)}</p>
+						</div>
 					</div>
 				</div>
 			</header>
 
 			<section class="result-layout">
-				<div class="details-column">
-					<section class="section tone-panel pattern-overview-panel">
-						<p class="section-label">Current Identity Pattern</p>
-						<div class="pattern-overview-grid">
-							<article class="text-block lead-block">
-								<h2>Core Pattern</h2>
-								<p>{identityReading.corePattern}</p>
-							</article>
-
-							<article class="text-block why-card">
-								<h2>Why this fits</h2>
-								<p>{createWhyThisFits(identityReading)}</p>
-							</article>
-						</div>
-					</section>
-
-					<section class="section tone-panel tension-panel">
-						<p class="section-label">Tension</p>
-						<article class="text-block contrast-block">
-							<h2>Current Challenge</h2>
-							<p>{identityReading.currentChallenge}</p>
+				<section class="section result-section pattern-overview-panel">
+					<p class="section-label">Current Identity Pattern</p>
+					<div class="pattern-overview-grid">
+						<article class="text-block lead-block">
+							<h2>Core Pattern</h2>
+							<p>{createCorePatternInterpretation(identityReading)}</p>
 						</article>
-					</section>
 
-					<section class="section tone-panel direction-panel">
-						<p class="section-label">Direction</p>
-						<article class="direction-card">
-							<h2>Growth Vector</h2>
-							<p>{identityReading.growthVector}</p>
+						<article class="text-block why-card">
+							<h2>Why this fits</h2>
+							<p>{createWhyThisFits(identityReading)}</p>
 						</article>
-					</section>
+					</div>
+				</section>
 
-					<section class="section tone-panel action-panel">
-						<p class="section-label">Suggested Next Action</p>
-						<article class="direction-card action-card">
-							<h2>Suggested Next Action</h2>
-							<p>{identityReading.suggestedNextAction}</p>
-						</article>
-					</section>
+				<section class="section result-section tension-panel">
+					<p class="section-label">Tension</p>
+					<article class="text-block contrast-block">
+						<h2>Current Challenge</h2>
+						<p>{identityReading.currentChallenge}</p>
+					</article>
+				</section>
 
-					<div class="actions-panel">
-						<div class="card-actions">
-							<button class="secondary-cta" type="button" on:click={exportCard} disabled={isExporting}>
-								{#if isExporting}
-									Exporting...
-								{:else}
-									Export Card
-								{/if}
-							</button>
+				<section class="section result-section direction-panel">
+					<p class="section-label">Direction</p>
+					<article class="direction-card">
+						<h2>Growth Focus</h2>
+						<p class="direction-value">{identityReading.growthVector}</p>
+						<p class="direction-copy">
+							{getGrowthVectorDirectionCopy(identityReading.growthVector)}
+						</p>
+					</article>
+				</section>
 
-							<button class="secondary-cta" type="button" on:click={shareCard} disabled={isSharing}>
-								{#if isSharing}
-									Sharing...
-								{:else}
-									Share Card
-								{/if}
-							</button>
-						</div>
+				<section class="section result-section action-panel">
+					<p class="section-label">Suggested Next Move</p>
+					<article class="direction-card action-card">
+						<p class="action-copy">{identityReading.suggestedNextAction}</p>
+					</article>
+				</section>
 
-						{#if shareMessage}
-							<p class="feedback">{shareMessage}</p>
-						{/if}
+				<section class="section result-section actions-panel">
+					<p class="section-label">Your AXZIO ID</p>
+					<p class="supporting-copy share-copy">A snapshot of how you're operating right now.</p>
+					<div class="card-actions">
+						<button class="cta" type="button" onclick={exportCard} disabled={isExporting}>
+							{#if isExporting}
+								Exporting...
+							{:else}
+								Export Card
+							{/if}
+						</button>
+
+						<button class="secondary-cta" type="button" onclick={shareCard} disabled={isSharing}>
+							{#if isSharing}
+								Sharing...
+							{:else}
+								Share Card
+							{/if}
+						</button>
 					</div>
 
-					<section class="section tone-panel email-panel">
-						<p class="section-label">Send this reading to your inbox</p>
-						<p class="supporting-copy email-copy">
-							Keep a copy of your AXZIO ID and reading in your inbox.
-						</p>
+					{#if shareMessage}
+						<p class="feedback">{shareMessage}</p>
+					{/if}
+				</section>
 
-						<form class="email-form" on:submit|preventDefault={saveEmailCapture}>
-							<label class="sr-only" for="reading-email">Email address</label>
-							<input
-								id="reading-email"
-								class="email-input"
-								type="email"
-								name="email"
-								placeholder="Enter your email"
-								bind:value={emailValue}
-								autocomplete="email"
-							/>
-							<button class="secondary-cta email-button" type="submit">Email me my AXZIO ID</button>
-						</form>
+				<section class="section result-section email-panel">
+					<p class="section-label">Send this result to your inbox</p>
+					<p class="supporting-copy email-copy">
+						Keep a copy of your AXZIO ID and result in your inbox.
+					</p>
 
-						<p class="form-helper">Inbox delivery is coming soon.</p>
+					<form
+						class="email-form"
+						onsubmit={(event) => {
+							event.preventDefault();
+							void saveEmailCapture();
+						}}
+					>
+						<label class="sr-only" for="reading-email">Email address</label>
+						<input
+							id="reading-email"
+							class="email-input"
+							type="email"
+							name="email"
+							placeholder="Enter your email"
+							bind:value={emailValue}
+							autocomplete="email"
+							disabled={isSavingEmail}
+						/>
+						<button class="secondary-cta email-button" type="submit" disabled={isSavingEmail}>
+							{#if isSavingEmail}
+								Saving...
+							{:else}
+								Email me my AXZIO ID
+							{/if}
+						</button>
+					</form>
 
-						{#if emailMessage}
-							<p class="feedback">{emailMessage}</p>
-						{/if}
-					</section>
-				</div>
+					<p class="form-helper">Used only for AXZIO private testing follow-up.</p>
+
+					{#if emailMessage}
+						<p class="feedback">{emailMessage}</p>
+					{/if}
+				</section>
+
+				<section class="section result-section feedback-panel">
+					<p class="section-label">Quick Feedback</p>
+					<p class="supporting-copy feedback-copy">Did this feel accurate?</p>
+
+					<fieldset class="feedback-form">
+						<legend class="sr-only">Did this feel accurate?</legend>
+
+						<div class="feedback-options">
+							{#each FEEDBACK_OPTIONS as option}
+								<label
+									class:selected={feedbackValue === option}
+									class:saving={isSavingFeedback && feedbackValue === option}
+									class="feedback-option"
+								>
+									<input
+										class="sr-only"
+										type="radio"
+										name="accuracy-feedback"
+										value={option}
+										checked={feedbackValue === option}
+										onchange={() => void saveFeedback(option)}
+									/>
+									<span>{option}</span>
+								</label>
+							{/each}
+						</div>
+					</fieldset>
+
+					{#if feedbackMessage}
+						<p class="feedback">{feedbackMessage}</p>
+					{/if}
+				</section>
 			</section>
 		{:else}
 			<header class="hero">
 				<p class="eyebrow">AXZIO ID</p>
 				<h1>AXZIO ID</h1>
-				<p class="subheading">Your reflections reveal the following identity pattern.</p>
 			</header>
 
 			<p class="empty">
-				No identity reading is available yet. Complete the reflection flow to generate one.
+				No identity result is available yet. Complete the reflection flow to generate one.
 			</p>
 		{/if}
 
@@ -787,19 +1124,6 @@
 </main>
 
 <style>
-	:global(body) {
-		margin: 0;
-		font-family:
-			"IBM Plex Sans",
-			"Avenir Next",
-			sans-serif;
-		background:
-			radial-gradient(circle at top, rgba(124, 84, 214, 0.18), transparent 38%),
-			radial-gradient(circle at 85% 20%, rgba(240, 164, 99, 0.12), transparent 30%),
-			linear-gradient(180deg, #06050b 0%, #0c0913 44%, #130d16 100%);
-		color: #f7efe5;
-	}
-
 	.shell {
 		min-height: 100vh;
 		display: grid;
@@ -808,7 +1132,7 @@
 	}
 
 	.panel {
-		width: min(100%, 74rem);
+		width: min(100%, 58rem);
 		display: grid;
 		gap: 2rem;
 	}
@@ -855,19 +1179,19 @@
 
 	.hero-copy {
 		display: grid;
-		gap: 0.85rem;
+		gap: 0.5rem;
 		max-width: 42rem;
+	}
+
+	.hero-summary {
+		margin: 0;
+		max-width: 34rem;
+		line-height: 1.7;
+		color: rgba(245, 237, 228, 0.8);
 	}
 
 	.hero .eyebrow {
 		color: rgba(244, 225, 199, 0.72);
-	}
-
-	.subheading {
-		margin: 0;
-		max-width: 34rem;
-		line-height: 1.65;
-		color: rgba(247, 237, 226, 0.78);
 	}
 
 	.hero-band {
@@ -876,10 +1200,16 @@
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 
+	.hero-signals {
+		display: grid;
+		gap: 1.25rem;
+	}
+
 	.hero-pill {
 		display: grid;
-		gap: 0.35rem;
-		padding: 1rem 1.1rem 1.05rem;
+		gap: 0.45rem;
+		align-content: start;
+		padding: 1rem 1.1rem 1.15rem;
 		border-radius: 1.25rem;
 		background: rgba(255, 249, 241, 0.05);
 		border: 1px solid rgba(255, 236, 212, 0.1);
@@ -898,6 +1228,13 @@
 		letter-spacing: -0.03em;
 	}
 
+	.hero-pill p {
+		margin: 0;
+		font-size: 0.96rem;
+		line-height: 1.55;
+		color: rgba(245, 237, 228, 0.78);
+	}
+
 	.signal-pill {
 		background:
 			linear-gradient(180deg, var(--accent-soft), rgba(255, 249, 241, 0.04));
@@ -906,17 +1243,13 @@
 
 	.result-layout {
 		display: grid;
-		gap: 1.75rem;
-	}
-
-	.details-column {
-		display: grid;
 		gap: 1.35rem;
-		width: min(100%, 56rem);
+		width: 100%;
 	}
 
-	.tone-panel {
-		padding: 1.6rem;
+	.result-section {
+		width: 100%;
+		padding: clamp(1.35rem, 3vw, 1.65rem);
 		border-radius: 1.75rem;
 		background:
 			radial-gradient(circle at top left, var(--surface-glow), transparent 34%),
@@ -925,12 +1258,6 @@
 		box-shadow:
 			0 20px 46px rgba(0, 0, 0, 0.28),
 			inset 0 1px 0 rgba(255, 244, 227, 0.04);
-	}
-
-	.pattern-overview-panel,
-	.email-panel {
-		border-radius: 1.35rem;
-		border: 1px solid rgba(255, 236, 212, 0.08);
 	}
 
 	.pattern-overview-panel {
@@ -952,30 +1279,29 @@
 	.actions-panel {
 		display: grid;
 		gap: 0.85rem;
-		padding-top: 0.55rem;
+	}
+
+	.share-copy {
+		max-width: 30rem;
 	}
 
 	.text-block,
 	.direction-card,
 	.empty {
-		padding: 1.3rem;
+		padding: 1.35rem;
 		border-radius: 1.35rem;
 		background: rgba(255, 248, 240, 0.04);
 		border: 1px solid rgba(255, 236, 212, 0.08);
-	}
-
-	.direction-card p {
-		margin: 0;
-		font-size: clamp(1.35rem, 3vw, 2rem);
-		line-height: 1.15;
-		font-weight: 500;
-		letter-spacing: -0.03em;
 	}
 
 	.text-block,
 	.direction-card {
 		display: grid;
 		gap: 0.75rem;
+	}
+
+	.direction-card p {
+		margin: 0;
 	}
 
 	.lead-block {
@@ -996,12 +1322,25 @@
 	.contrast-block {
 		padding: 1.45rem 1.4rem;
 		background:
-			linear-gradient(145deg, rgba(22, 16, 25, 0.96), rgba(31, 20, 20, 0.92));
+			linear-gradient(145deg, rgba(22, 16, 25, 0.96), rgba(20, 17, 30, 0.92));
 	}
 
 	.direction-panel .direction-card {
-		padding: 1.2rem 1.3rem 1.35rem;
-		max-width: 24rem;
+		padding: 1.35rem;
+	}
+
+	.direction-value {
+		margin: 0;
+		font-size: clamp(1.4rem, 3vw, 2.15rem);
+		line-height: 1.15;
+		font-weight: 500;
+		letter-spacing: -0.03em;
+	}
+
+	.direction-copy {
+		margin: 0;
+		line-height: 1.65;
+		color: rgba(245, 237, 228, 0.78);
 	}
 
 	.action-card {
@@ -1015,14 +1354,17 @@
 			inset 0 1px 0 rgba(255, 244, 227, 0.05);
 	}
 
-	.action-card h2,
 	.action-card p {
 		color: #f5eee3;
 	}
 
-	.action-panel .action-card p,
-	.direction-panel .direction-card p {
-		font-size: clamp(1.4rem, 3vw, 2.15rem);
+	.action-copy {
+		margin: 0;
+		font-size: clamp(1.15rem, 2vw, 1.45rem);
+		line-height: 1.7;
+		font-weight: 500;
+		letter-spacing: -0.02em;
+		color: #f5eee3;
 	}
 
 	.supporting-copy {
@@ -1032,14 +1374,12 @@
 		color: rgba(245, 237, 228, 0.8);
 	}
 
-	.email-panel {
-		padding: 1.3rem 1.4rem;
-		background:
-			linear-gradient(145deg, rgba(17, 14, 24, 0.92), rgba(14, 12, 20, 0.88));
-	}
-
 	.email-copy {
 		max-width: 34rem;
+	}
+
+	.feedback-copy {
+		max-width: 26rem;
 	}
 
 	.email-form {
@@ -1054,6 +1394,56 @@
 		font-size: 0.9rem;
 		line-height: 1.5;
 		color: rgba(240, 220, 198, 0.58);
+	}
+
+	.feedback-form {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	.feedback-options {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+
+	.feedback-option {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.85rem 1.15rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 236, 212, 0.12);
+		background: rgba(255, 248, 240, 0.05);
+		color: #f7efe5;
+		font-weight: 600;
+		cursor: pointer;
+		transition:
+			transform 140ms ease,
+			background-color 140ms ease,
+			border-color 140ms ease;
+	}
+
+	.feedback-option.selected {
+		background:
+			linear-gradient(180deg, var(--accent-soft), rgba(255, 248, 240, 0.08));
+		border-color: color-mix(in srgb, var(--accent) 28%, rgba(255, 236, 212, 0.14));
+	}
+
+	.feedback-option.saving {
+		box-shadow: inset 0 0 0 1px rgba(255, 244, 227, 0.08);
+	}
+
+	.feedback-option:focus-within {
+		outline: 2px solid var(--accent);
+		outline-offset: 4px;
+	}
+
+	.feedback-option:hover {
+		transform: translateY(-1px);
+		border-color: rgba(255, 236, 212, 0.22);
+		background: rgba(255, 248, 240, 0.08);
 	}
 
 	.email-input {
@@ -1073,6 +1463,11 @@
 	.email-input:focus-visible {
 		outline: 2px solid var(--accent);
 		outline-offset: 3px;
+	}
+
+	.email-input:disabled {
+		opacity: 0.72;
+		cursor: progress;
 	}
 
 	.email-button {
@@ -1123,10 +1518,15 @@
 	.cta {
 		border: 0;
 		background:
-			linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #f19258 40%));
+			linear-gradient(
+				135deg,
+				var(--app-accent),
+				color-mix(in srgb, var(--app-accent) 60%, var(--app-accent-strong) 40%)
+			);
 		color: #140f11;
 		text-decoration: none;
 		box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
+		cursor: pointer;
 	}
 
 	.secondary-cta {
@@ -1139,10 +1539,11 @@
 	.cta:hover,
 	.cta:focus-visible {
 		transform: translateY(-1px);
+		filter: brightness(1.03);
 	}
 
 	.cta:focus-visible {
-		outline: 2px solid var(--accent);
+		outline: 2px solid var(--app-accent);
 		outline-offset: 4px;
 	}
 
@@ -1187,6 +1588,11 @@
 		.result-layout {
 			gap: 1.25rem;
 		}
+
+		.feedback-options {
+			display: grid;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
 	}
 
 	@media (max-width: 640px) {
@@ -1199,13 +1605,17 @@
 		}
 
 		.hero,
-		.tone-panel {
+		.result-section {
 			padding: 1.25rem;
 			border-radius: 1.4rem;
 		}
 
 		.card-actions {
 			display: grid;
+		}
+
+		.feedback-options {
+			grid-template-columns: 1fr;
 		}
 
 		.cta,

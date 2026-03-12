@@ -4,6 +4,7 @@ build
 .env
 .env.*
 !.env.example
+.data/
 pnpm-lock.yaml
 yarn.lock
 .DS_Store
