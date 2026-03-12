@@ -28,28 +28,42 @@ export const identityReadingJsonSchema = {
 		properties: {
 			primaryMode: {
 				type: 'string',
+				description:
+					'The dominant AXZIO mode visible in the reflections. Must be one of the allowed enum values.',
 				enum: MODES.map(({ value }) => value)
 			},
 			secondaryMode: {
 				type: 'string',
+				description:
+					'The secondary AXZIO mode that supports or modulates the dominant mode.',
 				enum: MODES.map(({ value }) => value)
 			},
 			archetype: {
 				type: 'string',
+				description:
+					'The single best-fit AXZIO archetype. Choose the most recognizable operational pattern, not the most flattering label.',
 				enum: ARCHETYPES.map(({ value }) => value)
 			},
 			corePattern: {
-				type: 'string'
+				type: 'string',
+				description:
+					'Two concise sentences describing the user\'s underlying behavioral pattern, motivation, and emotional logic.'
 			},
 			currentChallenge: {
-				type: 'string'
+				type: 'string',
+				description:
+					'One concise sentence naming the user\'s current tension, trade-off, or point of friction.'
 			},
 			growthVector: {
 				type: 'string',
+				description:
+					'The most constructive AXZIO growth direction for the user right now.',
 				enum: GROWTH_VECTORS.map(({ value }) => value)
 			},
 			suggestedNextAction: {
-				type: 'string'
+				type: 'string',
+				description:
+					'One practical sentence suggesting a small but meaningful action the user can take in the next few days.'
 			}
 		},
 		required: [

@@ -1,6 +1,9 @@
 import { env } from '$env/dynamic/private';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { ARCHETYPES } from '$lib/config/archetypes';
+import { GROWTH_VECTORS } from '$lib/config/growth-vectors';
+import { MODES } from '$lib/config/modes';
 import {
 	identityReadingJsonSchema,
 	parseIdentityReading,
@@ -26,6 +29,14 @@ type OpenAIResponsePayload = {
 		}>;
 	}>;
 };
+
+const modeGuide = MODES.map(({ value, description }) => `- ${value}: ${description}`).join('\n');
+const archetypeGuide = ARCHETYPES.map(
+	({ value, description }) => `- ${value}: ${description}`
+).join('\n');
+const growthVectorGuide = GROWTH_VECTORS.map(
+	({ value, description }) => `- ${value}: ${description}`
+).join('\n');
 
 function parseAnalyzeRequest(body: unknown): AnalyzeRequest | null {
 	if (!body || typeof body !== 'object') {
@@ -53,14 +64,34 @@ function buildPrompt(responses: string[]) {
 		.join('\n');
 
 	return [
-		'You are AXZIO, an identity reading assistant.',
-		'Analyze the reflection responses and infer a grounded identity reading.',
-		'Tone requirements: clear, insightful, reflective, psychologically coherent, not mystical, not verbose.',
-		'Choose exactly one primary mode and one secondary mode from the allowed values.',
-		'Choose exactly one archetype and one growth vector from the allowed values.',
-		'Keep each free-text field concise, specific, and readable.',
-		'Avoid diagnostic language, therapy claims, or exaggerated certainty.',
-		'Base the reading on patterns visible in the reflections, not generic advice.',
+		'You are the AXZIO Identity Engine.',
+		'Interpret the responses and produce a concise identity reading that feels psychologically specific, archetypal, grounded, and human.',
+		'Your job is to detect the user\'s orientation, recurring pattern, likely tension, and constructive next step.',
+		'Do not summarize the answers one by one. Infer the pattern beneath them.',
+		'Do not use mystical language, therapy language, corporate coaching tone, or generic encouragement.',
+		'Do not simply mirror the user\'s words back to them. Name the pattern in a way that feels recognizable and precise.',
+		'Keep the result compact enough for a product UI card and short result page.',
+		'Use only the current AXZIO vocabulary listed below.',
+		'Allowed modes:',
+		modeGuide,
+		'Allowed archetypes:',
+		archetypeGuide,
+		'Allowed growth vectors:',
+		growthVectorGuide,
+		'Writing guidance by field:',
+		'- primaryMode: choose the dominant orientation driving the user right now.',
+		'- secondaryMode: choose the supporting orientation that shapes how the primary mode is expressed.',
+		'- archetype: choose the single best-fit archetype from the allowed list; it should feel recognizable, not flattering by default.',
+		'- corePattern: write 2 short sentences that interpret the user\'s behavior, motivation, and emotional logic. Be specific and pattern-based.',
+		'- currentChallenge: write 1 sentence naming the real tension, trade-off, or friction the user appears to be navigating.',
+		'- growthVector: choose the most constructive direction from the allowed list.',
+		'- suggestedNextAction: write 1 practical sentence describing a small, meaningful step the user could take in the next few days.',
+		'Quality bar:',
+		'- insightful, grounded, archetypal, and specific',
+		'- concise rather than elaborate',
+		'- constructive without sounding motivational',
+		'- confident but not absolute',
+		'- based on patterns in the reflections, not generic self-help language',
 		'Reflection responses:',
 		numberedResponses
 	].join('\n');
@@ -119,7 +150,7 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 			body: JSON.stringify({
 				model: OPENAI_MODEL,
 				instructions:
-					'Return an identity reading that matches the provided JSON schema exactly.',
+					'Return only a JSON object that matches the provided schema exactly. Use the schema enums exactly as written.',
 				input: buildPrompt(parsedRequest.responses),
 				text: {
 					format: {
