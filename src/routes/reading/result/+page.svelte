@@ -16,13 +16,23 @@
 	} from '$lib/identity/schema';
 
 	let identityReading: IdentityReading | null = null;
-	let cardElement: HTMLDivElement | null = null;
 	let isExporting = false;
 	let isSharing = false;
 	let shareMessage = '';
+	let cachedCardBlob: Blob | null = null;
+	let cachedCardBlobKey = '';
 
 	const EXPORT_FILENAME = 'axzio-identity-signal.png';
 	const SHARE_TITLE = 'AXZIO Identity Signal';
+	const CARD_WIDTH = 1200;
+	const CARD_HEIGHT = 1500;
+	const CARD_PADDING = 72;
+	const SURFACE_RADIUS = 42;
+	const FIELD_RADIUS = 28;
+	const LABEL_FONT = '600 26px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const VALUE_FONT = '600 58px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const BODY_FONT = '400 38px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const SMALL_BODY_FONT = '400 32px "IBM Plex Sans", "Avenir Next", sans-serif';
 
 	onMount(() => {
 		const savedValue = sessionStorage.getItem(IDENTITY_RESULT_STORAGE_KEY);
@@ -38,56 +48,21 @@
 		}
 	});
 
-	function copyComputedStyles(source: Element, target: HTMLElement) {
-		const computed = window.getComputedStyle(source);
-		const style = Array.from(computed)
-			.map((property) => `${property}: ${computed.getPropertyValue(property)};`)
-			.join(' ');
+	$: {
+		const nextKey = identityReading ? createCardBlobKey(identityReading) : '';
 
-		target.setAttribute('style', style);
-
-		const sourceChildren = Array.from(source.children);
-		const targetChildren = Array.from(target.children);
-
-		sourceChildren.forEach((child, index) => {
-			const targetChild = targetChildren[index];
-
-			if (child instanceof HTMLElement && targetChild instanceof HTMLElement) {
-				copyComputedStyles(child, targetChild);
-			}
-		});
-	}
-
-	function createCardSvg(node: HTMLElement) {
-		const rect = node.getBoundingClientRect();
-		const width = Math.ceil(rect.width);
-		const height = Math.ceil(rect.height);
-		const clone = node.cloneNode(true);
-
-		if (!(clone instanceof HTMLElement)) {
-			throw new Error('Card clone failed.');
+		if (nextKey !== cachedCardBlobKey) {
+			cachedCardBlob = null;
+			cachedCardBlobKey = nextKey;
 		}
-
-		copyComputedStyles(node, clone);
-		clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-		clone.style.margin = '0';
-
-		const markup = new XMLSerializer().serializeToString(clone);
-		const svg = `
-			<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-				<foreignObject width="100%" height="100%">${markup}</foreignObject>
-			</svg>
-		`;
-
-		return { svg, width, height };
 	}
 
-	function loadImage(url: string) {
-		return new Promise<HTMLImageElement>((resolve, reject) => {
-			const image = new Image();
-			image.onload = () => resolve(image);
-			image.onerror = () => reject(new Error('Image rendering failed.'));
-			image.src = url;
+	function createCardBlobKey(reading: IdentityReading) {
+		return JSON.stringify({
+			archetype: reading.archetype,
+			primaryMode: reading.primaryMode,
+			corePattern: reading.corePattern,
+			growthVector: reading.growthVector
 		});
 	}
 
@@ -95,59 +70,304 @@
 		return `My AXZIO Identity Signal: ${reading.archetype} • ${reading.primaryMode} • ${reading.growthVector}`;
 	}
 
-	async function createCardImageBlob() {
-		if (!cardElement) {
-			throw new Error('Identity card is unavailable.');
+	function drawRoundedRect(
+		context: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		radius: number
+	) {
+		context.beginPath();
+		context.moveTo(x + radius, y);
+		context.lineTo(x + width - radius, y);
+		context.quadraticCurveTo(x + width, y, x + width, y + radius);
+		context.lineTo(x + width, y + height - radius);
+		context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+		context.lineTo(x + radius, y + height);
+		context.quadraticCurveTo(x, y + height, x, y + height - radius);
+		context.lineTo(x, y + radius);
+		context.quadraticCurveTo(x, y, x + radius, y);
+		context.closePath();
+	}
+
+	function fillRoundedRect(
+		context: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		radius: number,
+		fillStyle: string | CanvasGradient
+	) {
+		context.save();
+		context.fillStyle = fillStyle;
+		drawRoundedRect(context, x, y, width, height, radius);
+		context.fill();
+		context.restore();
+	}
+
+	function strokeRoundedRect(
+		context: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		radius: number,
+		strokeStyle: string,
+		lineWidth: number
+	) {
+		context.save();
+		context.strokeStyle = strokeStyle;
+		context.lineWidth = lineWidth;
+		drawRoundedRect(context, x, y, width, height, radius);
+		context.stroke();
+		context.restore();
+	}
+
+	function wrapText(
+		context: CanvasRenderingContext2D,
+		text: string,
+		maxWidth: number,
+		maxLines: number
+	) {
+		const normalizedText = text.replace(/\s+/g, ' ').trim();
+
+		if (!normalizedText) {
+			return [''];
 		}
 
+		const words = normalizedText.split(' ');
+		const lines: string[] = [];
+		let currentLine = '';
+
+		for (const word of words) {
+			const candidate = currentLine ? `${currentLine} ${word}` : word;
+
+			if (context.measureText(candidate).width <= maxWidth) {
+				currentLine = candidate;
+				continue;
+			}
+
+			if (currentLine) {
+				lines.push(currentLine);
+				currentLine = word;
+			} else {
+				lines.push(word);
+			}
+
+			if (lines.length === maxLines) {
+				break;
+			}
+		}
+
+		if (lines.length < maxLines && currentLine) {
+			lines.push(currentLine);
+		}
+
+		if (lines.length > maxLines) {
+			lines.length = maxLines;
+		}
+
+		if (!lines.length) {
+			lines.push('');
+		}
+
+		const hasOverflow = words.join(' ') !== lines.join(' ');
+
+		if (hasOverflow) {
+			const lastLine = lines[lines.length - 1] ?? '';
+			let truncated = lastLine;
+
+			while (truncated && context.measureText(`${truncated}...`).width > maxWidth) {
+				truncated = truncated.slice(0, -1).trimEnd();
+			}
+
+			lines[lines.length - 1] = truncated ? `${truncated}...` : '...';
+		}
+
+		return lines;
+	}
+
+	function drawTextBlock(
+		context: CanvasRenderingContext2D,
+		text: string,
+		x: number,
+		y: number,
+		maxWidth: number,
+		lineHeight: number,
+		maxLines: number
+	) {
+		const lines = wrapText(context, text, maxWidth, maxLines);
+
+		lines.forEach((line, index) => {
+			context.fillText(line, x, y + index * lineHeight);
+		});
+	}
+
+	function drawField(
+		context: CanvasRenderingContext2D,
+		label: string,
+		value: string,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		options?: { body?: boolean; maxLines?: number }
+	) {
+		fillRoundedRect(context, x, y, width, height, FIELD_RADIUS, 'rgba(255, 255, 255, 0.45)');
+		strokeRoundedRect(context, x, y, width, height, FIELD_RADIUS, 'rgba(49, 43, 38, 0.08)', 2);
+
+		context.save();
+		context.textBaseline = 'top';
+		context.fillStyle = '#6b5d4d';
+		context.font = LABEL_FONT;
+		context.letterSpacing = '0.16em';
+		context.fillText(label.toUpperCase(), x + 34, y + 26);
+
+		context.fillStyle = '#1e1b18';
+
+		if (options?.body) {
+			context.font = SMALL_BODY_FONT;
+			drawTextBlock(context, value, x + 34, y + 86, width - 68, 46, options.maxLines ?? 6);
+		} else {
+			context.font = VALUE_FONT;
+			drawTextBlock(context, value, x + 34, y + 84, width - 68, 64, options?.maxLines ?? 2);
+		}
+
+		context.restore();
+	}
+
+	async function renderCardBlob(reading: IdentityReading) {
 		if ('fonts' in document) {
 			await document.fonts.ready;
 		}
 
-		const { svg, width, height } = createCardSvg(cardElement);
-		const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+		const canvas = document.createElement('canvas');
+		canvas.width = CARD_WIDTH;
+		canvas.height = CARD_HEIGHT;
 
-		try {
-			const image = await loadImage(svgUrl);
-			const canvas = document.createElement('canvas');
-			const scale = window.devicePixelRatio > 1 ? 2 : 1;
+		const context = canvas.getContext('2d');
 
-			canvas.width = width * scale;
-			canvas.height = height * scale;
-
-			const context = canvas.getContext('2d');
-
-			if (!context) {
-				throw new Error('Canvas export is unavailable.');
-			}
-
-			context.scale(scale, scale);
-			context.drawImage(image, 0, 0, width, height);
-
-			return await new Promise<Blob>((resolve, reject) => {
-				canvas.toBlob((blob) => {
-					if (!blob) {
-						reject(new Error('PNG export failed.'));
-						return;
-					}
-
-					resolve(blob);
-				}, 'image/png');
-			});
-		} finally {
-			URL.revokeObjectURL(svgUrl);
+		if (!context) {
+			throw new Error('Canvas export is unavailable.');
 		}
+
+		context.fillStyle = '#f4efe5';
+		context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+		const glow = context.createRadialGradient(280, 160, 0, 280, 160, 520);
+		glow.addColorStop(0, 'rgba(216, 196, 165, 0.36)');
+		glow.addColorStop(1, 'rgba(216, 196, 165, 0)');
+		context.fillStyle = glow;
+		context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+		const panelGradient = context.createLinearGradient(120, 120, CARD_WIDTH - 120, CARD_HEIGHT - 180);
+		panelGradient.addColorStop(0, 'rgba(255, 251, 245, 0.96)');
+		panelGradient.addColorStop(1, 'rgba(244, 239, 229, 0.92)');
+
+		fillRoundedRect(
+			context,
+			CARD_PADDING,
+			CARD_PADDING,
+			CARD_WIDTH - CARD_PADDING * 2,
+			CARD_HEIGHT - CARD_PADDING * 2,
+			SURFACE_RADIUS,
+			panelGradient
+		);
+		strokeRoundedRect(
+			context,
+			CARD_PADDING,
+			CARD_PADDING,
+			CARD_WIDTH - CARD_PADDING * 2,
+			CARD_HEIGHT - CARD_PADDING * 2,
+			SURFACE_RADIUS,
+			'rgba(49, 43, 38, 0.18)',
+			2
+		);
+
+		context.save();
+		context.textBaseline = 'top';
+		context.fillStyle = '#6b5d4d';
+		context.font = LABEL_FONT;
+		context.fillText('AXZIO IDENTITY SIGNAL', CARD_PADDING + 36, CARD_PADDING + 36);
+
+		const innerX = CARD_PADDING + 36;
+		const innerY = CARD_PADDING + 104;
+		const columnGap = 24;
+		const fieldWidth = (CARD_WIDTH - CARD_PADDING * 2 - 72 - columnGap) / 2;
+
+		drawField(context, 'Archetype', reading.archetype, innerX, innerY, fieldWidth, 250);
+		drawField(
+			context,
+			'Primary Mode',
+			reading.primaryMode,
+			innerX + fieldWidth + columnGap,
+			innerY,
+			fieldWidth,
+			250
+		);
+		drawField(context, 'Signal', reading.corePattern, innerX, innerY + 274, fieldWidth * 2 + columnGap, 410, {
+			body: true,
+			maxLines: 6
+		});
+		drawField(
+			context,
+			'Growth Vector',
+			reading.growthVector,
+			innerX,
+			innerY + 708,
+			fieldWidth * 2 + columnGap,
+			250,
+			{ maxLines: 2 }
+		);
+
+		context.fillStyle = '#6b5d4d';
+		context.font = '500 24px "IBM Plex Sans", "Avenir Next", sans-serif';
+		context.fillText('axzio.ai', innerX, CARD_HEIGHT - CARD_PADDING - 60);
+		context.restore();
+
+		return await new Promise<Blob>((resolve, reject) => {
+			canvas.toBlob((blob) => {
+				if (!blob) {
+					reject(new Error('PNG export failed.'));
+					return;
+				}
+
+				resolve(blob);
+			}, 'image/png');
+		});
 	}
 
-	function downloadBlob(blob: Blob, filename: string) {
+	async function createCardImageBlob() {
+		if (!identityReading) {
+			throw new Error('Identity card is unavailable.');
+		}
+
+		if (cachedCardBlob && cachedCardBlobKey === createCardBlobKey(identityReading)) {
+			return cachedCardBlob;
+		}
+
+		const blob = await renderCardBlob(identityReading);
+		cachedCardBlob = blob;
+		cachedCardBlobKey = createCardBlobKey(identityReading);
+		return blob;
+	}
+
+	async function downloadBlob(blob: Blob, filename: string) {
 		const url = URL.createObjectURL(blob);
+		const downloadLink = document.createElement('a');
 
 		try {
-			const downloadLink = document.createElement('a');
 			downloadLink.href = url;
 			downloadLink.download = filename;
+			downloadLink.style.display = 'none';
+			document.body.append(downloadLink);
 			downloadLink.click();
+
+			await new Promise((resolve) => window.setTimeout(resolve, 0));
 		} finally {
+			downloadLink.remove();
 			URL.revokeObjectURL(url);
 		}
 	}
@@ -162,7 +382,7 @@
 
 		try {
 			const blob = await createCardImageBlob();
-			downloadBlob(blob, EXPORT_FILENAME);
+			await downloadBlob(blob, EXPORT_FILENAME);
 		} catch (error) {
 			console.error('Failed to export identity card.', error);
 		} finally {
@@ -223,7 +443,7 @@
 				<p class="subheading">Your reflections reveal the following identity pattern.</p>
 			</header>
 
-			<div class="card-export-target" bind:this={cardElement}>
+			<div class="card-export-target">
 				<IdentitySignalCard
 					archetype={identityReading.archetype}
 					primaryMode={identityReading.primaryMode}
