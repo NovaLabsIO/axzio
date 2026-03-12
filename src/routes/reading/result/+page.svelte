@@ -1,5 +1,5 @@
 <svelte:head>
-	<title>AXZIO | Identity Signal</title>
+	<title>AXZIO | ID</title>
 	<meta
 		name="description"
 		content="Your AXZIO identity reading result."
@@ -8,7 +8,6 @@
 
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import IdentitySignalCard from '$lib/components/IdentitySignalCard.svelte';
 	import {
 		IDENTITY_RESULT_STORAGE_KEY,
 		parseIdentityReading,
@@ -19,23 +18,82 @@
 	let isExporting = false;
 	let isSharing = false;
 	let shareMessage = '';
+	let emailValue = '';
+	let emailMessage = '';
 	let cachedCardBlob: Blob | null = null;
 	let cachedCardBlobKey = '';
 
 	const EXPORT_FILENAME = 'axzio-identity-signal.png';
-	const SHARE_TITLE = 'AXZIO Identity Signal';
-	const CARD_WIDTH = 1200;
-	const CARD_HEIGHT = 1500;
-	const CARD_PADDING = 72;
-	const SURFACE_RADIUS = 42;
-	const FIELD_RADIUS = 28;
-	const LABEL_FONT = '600 26px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const VALUE_FONT = '600 58px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const BODY_FONT = '400 38px "IBM Plex Sans", "Avenir Next", sans-serif';
-	const SMALL_BODY_FONT = '400 32px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const EMAIL_CAPTURE_STORAGE_KEY = 'axzio.identity-reading-email';
+	const SHARE_TITLE = 'AXZIO ID';
+	const CARD_WIDTH = 1080;
+	const CARD_HEIGHT = 1080;
+	const CARD_PADDING = 56;
+	const SURFACE_RADIUS = 36;
+	const FIELD_RADIUS = 24;
+	const LABEL_FONT = '600 21px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const TITLE_FONT = '600 34px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const HERO_FONT = '600 72px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const VALUE_FONT = '600 42px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const BODY_FONT = '400 27px "IBM Plex Sans", "Avenir Next", sans-serif';
+	const SMALL_BODY_FONT = '400 24px "IBM Plex Sans", "Avenir Next", sans-serif';
+
+	type AccentTheme = {
+		accent: string;
+		accentSoft: string;
+		accentGlow: string;
+		surfaceGlow: string;
+	};
+
+	const modeThemes: Record<string, AccentTheme> = {
+		People: {
+			accent: '#f4b88f',
+			accentSoft: 'rgba(244, 184, 143, 0.18)',
+			accentGlow: 'rgba(244, 184, 143, 0.28)',
+			surfaceGlow: 'rgba(244, 184, 143, 0.16)'
+		},
+		Pleasure: {
+			accent: '#f0a58c',
+			accentSoft: 'rgba(240, 165, 140, 0.18)',
+			accentGlow: 'rgba(240, 165, 140, 0.28)',
+			surfaceGlow: 'rgba(240, 165, 140, 0.14)'
+		},
+		Production: {
+			accent: '#d3a463',
+			accentSoft: 'rgba(211, 164, 99, 0.18)',
+			accentGlow: 'rgba(211, 164, 99, 0.26)',
+			surfaceGlow: 'rgba(211, 164, 99, 0.14)'
+		},
+		Reflection: {
+			accent: '#b59cff',
+			accentSoft: 'rgba(181, 156, 255, 0.18)',
+			accentGlow: 'rgba(181, 156, 255, 0.26)',
+			surfaceGlow: 'rgba(181, 156, 255, 0.14)'
+		}
+	};
+
+	function getAccentTheme(mode: string | undefined): AccentTheme {
+		return modeThemes[mode ?? ''] ?? modeThemes.Reflection;
+	}
+
+	function getSurfaceStyle(reading: IdentityReading | null) {
+		const theme = getAccentTheme(reading?.primaryMode);
+
+		return [
+			`--accent:${theme.accent}`,
+			`--accent-soft:${theme.accentSoft}`,
+			`--accent-glow:${theme.accentGlow}`,
+			`--surface-glow:${theme.surfaceGlow}`
+		].join(';');
+	}
 
 	onMount(() => {
 		const savedValue = sessionStorage.getItem(IDENTITY_RESULT_STORAGE_KEY);
+		const savedEmail = localStorage.getItem(EMAIL_CAPTURE_STORAGE_KEY);
+
+		if (savedEmail) {
+			emailValue = savedEmail;
+		}
 
 		if (!savedValue) {
 			return;
@@ -61,13 +119,44 @@
 		return JSON.stringify({
 			archetype: reading.archetype,
 			primaryMode: reading.primaryMode,
+			secondaryMode: reading.secondaryMode,
 			corePattern: reading.corePattern,
-			growthVector: reading.growthVector
+			currentChallenge: reading.currentChallenge,
+			growthVector: reading.growthVector,
+			suggestedNextAction: reading.suggestedNextAction
 		});
 	}
 
 	function createShareText(reading: IdentityReading) {
-		return `My AXZIO Identity Signal: ${reading.archetype} • ${reading.primaryMode} • ${reading.growthVector}`;
+		return `My AXZIO ID: ${reading.archetype} • ${reading.primaryMode} • ${reading.growthVector}`;
+	}
+
+	function createWhyThisFits(reading: IdentityReading) {
+		const secondaryMode = reading.secondaryMode.trim().toLowerCase();
+
+		return `${reading.archetype} fits because your reading leans first toward ${reading.primaryMode.toLowerCase()} and is reinforced by ${secondaryMode}, which points to the pattern of ${reading.corePattern.trim().replace(/\.$/, '').toLowerCase()}. The move toward ${reading.growthVector.toLowerCase()} makes sense as the clearest direction for working through your current challenge.`;
+	}
+
+	function isValidEmail(email: string) {
+		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+	}
+
+	function saveEmailCapture() {
+		const normalizedEmail = emailValue.trim().toLowerCase();
+
+		if (!normalizedEmail) {
+			emailMessage = 'Enter an email if you want to save this for future inbox delivery.';
+			return;
+		}
+
+		if (!isValidEmail(normalizedEmail)) {
+			emailMessage = 'Enter a valid email address.';
+			return;
+		}
+
+		localStorage.setItem(EMAIL_CAPTURE_STORAGE_KEY, normalizedEmail);
+		emailValue = normalizedEmail;
+		emailMessage = 'Saved locally on this device. Inbox delivery is coming soon.';
 	}
 
 	function drawRoundedRect(
@@ -205,6 +294,22 @@
 		});
 	}
 
+	function drawDivider(
+		context: CanvasRenderingContext2D,
+		x: number,
+		y: number,
+		width: number
+	) {
+		context.save();
+		context.strokeStyle = 'rgba(255, 240, 224, 0.12)';
+		context.lineWidth = 2;
+		context.beginPath();
+		context.moveTo(x, y);
+		context.lineTo(x + width, y);
+		context.stroke();
+		context.restore();
+	}
+
 	function drawField(
 		context: CanvasRenderingContext2D,
 		label: string,
@@ -213,19 +318,31 @@
 		y: number,
 		width: number,
 		height: number,
-		options?: { body?: boolean; maxLines?: number }
+		options?: { body?: boolean; maxLines?: number; highlight?: boolean; theme?: AccentTheme }
 	) {
-		fillRoundedRect(context, x, y, width, height, FIELD_RADIUS, 'rgba(255, 255, 255, 0.45)');
-		strokeRoundedRect(context, x, y, width, height, FIELD_RADIUS, 'rgba(49, 43, 38, 0.08)', 2);
+		const theme = options?.theme ?? modeThemes.Reflection;
+		const panelFill = options?.highlight ? 'rgba(26, 21, 32, 0.88)' : 'rgba(15, 13, 21, 0.82)';
+		const border = options?.highlight ? 'rgba(255, 236, 212, 0.18)' : 'rgba(255, 236, 212, 0.1)';
+		const glow = context.createRadialGradient(x + 44, y + 36, 0, x + 44, y + 36, width * 0.8);
+		glow.addColorStop(0, theme.surfaceGlow);
+		glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+		fillRoundedRect(context, x, y, width, height, FIELD_RADIUS, panelFill);
+		context.save();
+		drawRoundedRect(context, x, y, width, height, FIELD_RADIUS);
+		context.clip();
+		context.fillStyle = glow;
+		context.fillRect(x, y, width, height);
+		context.restore();
+		strokeRoundedRect(context, x, y, width, height, FIELD_RADIUS, border, 2);
 
 		context.save();
 		context.textBaseline = 'top';
-		context.fillStyle = '#6b5d4d';
+		context.fillStyle = options?.highlight ? 'rgba(255, 231, 203, 0.8)' : 'rgba(240, 220, 198, 0.72)';
 		context.font = LABEL_FONT;
-		context.letterSpacing = '0.16em';
 		context.fillText(label.toUpperCase(), x + 34, y + 26);
 
-		context.fillStyle = '#1e1b18';
+		context.fillStyle = '#f6efe7';
 
 		if (options?.body) {
 			context.font = SMALL_BODY_FONT;
@@ -238,7 +355,46 @@
 		context.restore();
 	}
 
+	function drawHeroField(
+		context: CanvasRenderingContext2D,
+		label: string,
+		value: string,
+		x: number,
+		y: number,
+		width: number,
+		height: number,
+		theme: AccentTheme
+	) {
+		const heroGradient = context.createLinearGradient(x, y, x + width, y + height);
+		heroGradient.addColorStop(0, 'rgba(16, 14, 24, 0.98)');
+		heroGradient.addColorStop(1, 'rgba(36, 24, 37, 0.96)');
+
+		fillRoundedRect(context, x, y, width, height, FIELD_RADIUS + 6, heroGradient);
+		const glow = context.createRadialGradient(x + width * 0.18, y + height * 0.2, 0, x + width * 0.18, y + height * 0.2, width * 0.6);
+		glow.addColorStop(0, theme.accentGlow);
+		glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+		context.save();
+		drawRoundedRect(context, x, y, width, height, FIELD_RADIUS + 6);
+		context.clip();
+		context.fillStyle = glow;
+		context.fillRect(x, y, width, height);
+		context.restore();
+		strokeRoundedRect(context, x, y, width, height, FIELD_RADIUS + 6, 'rgba(255, 238, 212, 0.16)', 2);
+
+		context.save();
+		context.textBaseline = 'top';
+		context.fillStyle = 'rgba(247, 228, 205, 0.82)';
+		context.font = LABEL_FONT;
+		context.fillText(label.toUpperCase(), x + 36, y + 34);
+		context.fillStyle = '#fbf4eb';
+		context.font = HERO_FONT;
+		drawTextBlock(context, value, x + 36, y + 86, width - 72, 74, 2);
+		context.restore();
+	}
+
 	async function renderCardBlob(reading: IdentityReading) {
+		const theme = getAccentTheme(reading.primaryMode);
+
 		if ('fonts' in document) {
 			await document.fonts.ready;
 		}
@@ -253,18 +409,27 @@
 			throw new Error('Canvas export is unavailable.');
 		}
 
-		context.fillStyle = '#f4efe5';
+		const background = context.createLinearGradient(0, 0, CARD_WIDTH, CARD_HEIGHT);
+		background.addColorStop(0, '#090812');
+		background.addColorStop(0.6, '#120e1a');
+		background.addColorStop(1, '#1f1520');
+		context.fillStyle = background;
 		context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
-		const glow = context.createRadialGradient(280, 160, 0, 280, 160, 520);
-		glow.addColorStop(0, 'rgba(216, 196, 165, 0.36)');
-		glow.addColorStop(1, 'rgba(216, 196, 165, 0)');
-		context.fillStyle = glow;
+		const glow = context.createRadialGradient(260, 160, 0, 260, 160, 500);
+		glow.addColorStop(0, theme.accentGlow);
+		glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
 		context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
-		const panelGradient = context.createLinearGradient(120, 120, CARD_WIDTH - 120, CARD_HEIGHT - 180);
-		panelGradient.addColorStop(0, 'rgba(255, 251, 245, 0.96)');
-		panelGradient.addColorStop(1, 'rgba(244, 239, 229, 0.92)');
+		const emberGlow = context.createRadialGradient(860, 820, 0, 860, 820, 440);
+		emberGlow.addColorStop(0, 'rgba(241, 146, 88, 0.14)');
+		emberGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+		context.fillStyle = emberGlow;
+		context.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+		const panelGradient = context.createLinearGradient(100, 100, CARD_WIDTH - 100, CARD_HEIGHT - 120);
+		panelGradient.addColorStop(0, 'rgba(12, 11, 19, 0.96)');
+		panelGradient.addColorStop(1, 'rgba(25, 20, 31, 0.94)');
 
 		fillRoundedRect(
 			context,
@@ -282,48 +447,98 @@
 			CARD_WIDTH - CARD_PADDING * 2,
 			CARD_HEIGHT - CARD_PADDING * 2,
 			SURFACE_RADIUS,
-			'rgba(49, 43, 38, 0.18)',
+			'rgba(255, 236, 212, 0.12)',
 			2
 		);
 
 		context.save();
 		context.textBaseline = 'top';
-		context.fillStyle = '#6b5d4d';
+		context.fillStyle = 'rgba(245, 226, 203, 0.72)';
 		context.font = LABEL_FONT;
-		context.fillText('AXZIO IDENTITY SIGNAL', CARD_PADDING + 36, CARD_PADDING + 36);
+		context.fillText('AXZIO ID', CARD_PADDING + 30, CARD_PADDING + 28);
+		context.fillStyle = '#f7efe5';
+		context.font = TITLE_FONT;
+		context.fillText('Identity readout', CARD_PADDING + 30, CARD_PADDING + 66);
 
-		const innerX = CARD_PADDING + 36;
-		const innerY = CARD_PADDING + 104;
-		const columnGap = 24;
-		const fieldWidth = (CARD_WIDTH - CARD_PADDING * 2 - 72 - columnGap) / 2;
+		const innerX = CARD_PADDING + 30;
+		const innerY = CARD_PADDING + 122;
+		const innerWidth = CARD_WIDTH - CARD_PADDING * 2 - 60;
+		const columnGap = 20;
+		const fieldWidth = (innerWidth - columnGap) / 2;
 
-		drawField(context, 'Archetype', reading.archetype, innerX, innerY, fieldWidth, 250);
+		drawHeroField(context, 'Archetype', reading.archetype, innerX, innerY, innerWidth, 194, theme);
+		drawField(context, 'Primary Mode', reading.primaryMode, innerX, innerY + 214, fieldWidth, 158, {
+			theme,
+			maxLines: 2
+		});
 		drawField(
 			context,
-			'Primary Mode',
-			reading.primaryMode,
+			'Secondary Mode',
+			reading.secondaryMode,
 			innerX + fieldWidth + columnGap,
-			innerY,
+			innerY + 214,
 			fieldWidth,
-			250
+			158,
+			{ maxLines: 2, theme }
 		);
-		drawField(context, 'Signal', reading.corePattern, innerX, innerY + 274, fieldWidth * 2 + columnGap, 410, {
-			body: true,
-			maxLines: 6
-		});
+		drawField(
+			context,
+			'Core Pattern',
+			reading.corePattern,
+			innerX,
+			innerY + 392,
+			innerWidth,
+			194,
+			{
+				body: true,
+				maxLines: 4,
+				highlight: true,
+				theme
+			}
+		);
+		drawField(
+			context,
+			'Current Challenge',
+			reading.currentChallenge,
+			innerX,
+			innerY + 606,
+			innerWidth,
+			132,
+			{
+				body: true,
+				maxLines: 2,
+				theme
+			}
+		);
 		drawField(
 			context,
 			'Growth Vector',
 			reading.growthVector,
 			innerX,
-			innerY + 708,
-			fieldWidth * 2 + columnGap,
-			250,
-			{ maxLines: 2 }
+			innerY + 758,
+			fieldWidth,
+			148,
+			{ maxLines: 2, theme }
+		);
+		drawField(
+			context,
+			'Next Action',
+			reading.suggestedNextAction,
+			innerX + fieldWidth + columnGap,
+			innerY + 758,
+			fieldWidth,
+			148,
+			{
+				body: true,
+				maxLines: 3,
+				highlight: true,
+				theme
+			}
 		);
 
-		context.fillStyle = '#6b5d4d';
-		context.font = '500 24px "IBM Plex Sans", "Avenir Next", sans-serif';
+		drawDivider(context, innerX, CARD_HEIGHT - CARD_PADDING - 86, innerWidth);
+		context.fillStyle = 'rgba(240, 220, 198, 0.72)';
+		context.font = '500 20px "IBM Plex Sans", "Avenir Next", sans-serif';
 		context.fillText('axzio.ai', innerX, CARD_HEIGHT - CARD_PADDING - 60);
 		context.restore();
 
@@ -434,93 +649,131 @@
 	}
 </script>
 
-<main class="shell">
+<main class="shell" style={getSurfaceStyle(identityReading)}>
 	<section class="panel">
 		{#if identityReading}
 			<header class="hero">
-				<p class="eyebrow">AXZIO Identity Signal</p>
-				<h1>AXZIO Identity Signal</h1>
-				<p class="subheading">Your reflections reveal the following identity pattern.</p>
+				<div class="hero-copy">
+					<p class="eyebrow">AXZIO ID</p>
+					<h1>{identityReading.archetype}</h1>
+					<p class="subheading">
+						A concise identity readout built from your current pattern, tension, and direction.
+					</p>
+				</div>
+
+				<div class="hero-band">
+					<div class="hero-pill signal-pill">
+						<span>Primary</span>
+						<strong>{identityReading.primaryMode}</strong>
+					</div>
+					<div class="hero-pill">
+						<span>Secondary</span>
+						<strong>{identityReading.secondaryMode}</strong>
+					</div>
+					<div class="hero-pill signal-pill">
+						<span>Growth</span>
+						<strong>{identityReading.growthVector}</strong>
+					</div>
+				</div>
 			</header>
 
-			<div class="card-export-target">
-				<IdentitySignalCard
-					archetype={identityReading.archetype}
-					primaryMode={identityReading.primaryMode}
-					corePattern={identityReading.corePattern}
-					growthVector={identityReading.growthVector}
-				/>
-			</div>
+			<section class="result-layout">
+				<div class="details-column">
+					<section class="section tone-panel pattern-overview-panel">
+						<p class="section-label">Current Identity Pattern</p>
+						<div class="pattern-overview-grid">
+							<article class="text-block lead-block">
+								<h2>Core Pattern</h2>
+								<p>{identityReading.corePattern}</p>
+							</article>
 
-			<div class="card-actions">
-				<button class="secondary-cta" type="button" on:click={exportCard} disabled={isExporting}>
-					{#if isExporting}
-						Exporting...
-					{:else}
-						Export Card
-					{/if}
-				</button>
+							<article class="text-block why-card">
+								<h2>Why this fits</h2>
+								<p>{createWhyThisFits(identityReading)}</p>
+							</article>
+						</div>
+					</section>
 
-				<button class="secondary-cta" type="button" on:click={shareCard} disabled={isSharing}>
-					{#if isSharing}
-						Sharing...
-					{:else}
-						Share Card
-					{/if}
-				</button>
-			</div>
+					<section class="section tone-panel tension-panel">
+						<p class="section-label">Tension</p>
+						<article class="text-block contrast-block">
+							<h2>Current Challenge</h2>
+							<p>{identityReading.currentChallenge}</p>
+						</article>
+					</section>
 
-			{#if shareMessage}
-				<p class="feedback">{shareMessage}</p>
-			{/if}
+					<section class="section tone-panel direction-panel">
+						<p class="section-label">Direction</p>
+						<article class="direction-card">
+							<h2>Growth Vector</h2>
+							<p>{identityReading.growthVector}</p>
+						</article>
+					</section>
 
-			<section class="section">
-				<p class="section-label">Primary Identity Summary</p>
-				<div class="summary-grid">
-					<article class="summary-card">
-						<h2>Primary Mode</h2>
-						<p>{identityReading.primaryMode}</p>
-					</article>
-					<article class="summary-card">
-						<h2>Secondary Mode</h2>
-						<p>{identityReading.secondaryMode}</p>
-					</article>
-					<article class="summary-card">
-						<h2>Archetype</h2>
-						<p>{identityReading.archetype}</p>
-					</article>
-				</div>
-			</section>
+					<section class="section tone-panel action-panel">
+						<p class="section-label">Suggested Next Action</p>
+						<article class="direction-card action-card">
+							<h2>Suggested Next Action</h2>
+							<p>{identityReading.suggestedNextAction}</p>
+						</article>
+					</section>
 
-			<section class="section interpretation">
-				<p class="section-label">Identity Interpretation</p>
-				<article class="text-block">
-					<h2>Core Pattern</h2>
-					<p>{identityReading.corePattern}</p>
-				</article>
-				<article class="text-block">
-					<h2>Current Challenge</h2>
-					<p>{identityReading.currentChallenge}</p>
-				</article>
-			</section>
+					<div class="actions-panel">
+						<div class="card-actions">
+							<button class="secondary-cta" type="button" on:click={exportCard} disabled={isExporting}>
+								{#if isExporting}
+									Exporting...
+								{:else}
+									Export Card
+								{/if}
+							</button>
 
-			<section class="section direction">
-				<p class="section-label">Direction</p>
-				<div class="direction-grid">
-					<article class="direction-card">
-						<h2>Growth Vector</h2>
-						<p>{identityReading.growthVector}</p>
-					</article>
-					<article class="direction-card">
-						<h2>Suggested Next Action</h2>
-						<p>{identityReading.suggestedNextAction}</p>
-					</article>
+							<button class="secondary-cta" type="button" on:click={shareCard} disabled={isSharing}>
+								{#if isSharing}
+									Sharing...
+								{:else}
+									Share Card
+								{/if}
+							</button>
+						</div>
+
+						{#if shareMessage}
+							<p class="feedback">{shareMessage}</p>
+						{/if}
+					</div>
+
+					<section class="section tone-panel email-panel">
+						<p class="section-label">Send this reading to your inbox</p>
+						<p class="supporting-copy email-copy">
+							Keep a copy of your AXZIO ID and reading in your inbox.
+						</p>
+
+						<form class="email-form" on:submit|preventDefault={saveEmailCapture}>
+							<label class="sr-only" for="reading-email">Email address</label>
+							<input
+								id="reading-email"
+								class="email-input"
+								type="email"
+								name="email"
+								placeholder="Enter your email"
+								bind:value={emailValue}
+								autocomplete="email"
+							/>
+							<button class="secondary-cta email-button" type="submit">Email me my AXZIO ID</button>
+						</form>
+
+						<p class="form-helper">Inbox delivery is coming soon.</p>
+
+						{#if emailMessage}
+							<p class="feedback">{emailMessage}</p>
+						{/if}
+					</section>
 				</div>
 			</section>
 		{:else}
 			<header class="hero">
-				<p class="eyebrow">AXZIO Identity Signal</p>
-				<h1>AXZIO Identity Signal</h1>
+				<p class="eyebrow">AXZIO ID</p>
+				<h1>AXZIO ID</h1>
 				<p class="subheading">Your reflections reveal the following identity pattern.</p>
 			</header>
 
@@ -541,9 +794,10 @@
 			"Avenir Next",
 			sans-serif;
 		background:
-			radial-gradient(circle at top, rgba(216, 196, 165, 0.36), transparent 42%),
-			#f4efe5;
-		color: #1e1b18;
+			radial-gradient(circle at top, rgba(124, 84, 214, 0.18), transparent 38%),
+			radial-gradient(circle at 85% 20%, rgba(240, 164, 99, 0.12), transparent 30%),
+			linear-gradient(180deg, #06050b 0%, #0c0913 44%, #130d16 100%);
+		color: #f7efe5;
 	}
 
 	.shell {
@@ -554,15 +808,15 @@
 	}
 
 	.panel {
-		width: min(100%, 52rem);
+		width: min(100%, 74rem);
 		display: grid;
-		gap: 1.75rem;
+		gap: 2rem;
 	}
 
 	.hero,
 	.section {
 		display: grid;
-		gap: 0.9rem;
+		gap: 1rem;
 	}
 
 	.eyebrow,
@@ -572,29 +826,121 @@
 		font-size: 0.75rem;
 		letter-spacing: 0.16em;
 		text-transform: uppercase;
-		color: #6b5d4d;
+		color: rgba(241, 221, 197, 0.68);
 	}
 
 	h1 {
 		margin: 0;
-		font-size: clamp(2.5rem, 6vw, 4.1rem);
-		line-height: 0.95;
-		font-weight: 500;
+		font-size: clamp(3rem, 7vw, 5.4rem);
+		line-height: 0.92;
+		font-weight: 600;
 		letter-spacing: -0.04em;
+	}
+
+	.hero {
+		position: relative;
+		overflow: hidden;
+		padding: 2.5rem;
+		border-radius: 2.2rem;
+		background:
+			radial-gradient(circle at top left, var(--accent-glow), transparent 34%),
+			radial-gradient(circle at 82% 24%, rgba(238, 145, 89, 0.12), transparent 24%),
+			linear-gradient(145deg, rgba(10, 9, 17, 0.96), rgba(24, 18, 30, 0.94));
+		color: #f8f3ea;
+		border: 1px solid rgba(255, 236, 212, 0.1);
+		box-shadow:
+			0 32px 80px rgba(0, 0, 0, 0.42),
+			inset 0 1px 0 rgba(255, 245, 230, 0.05);
+	}
+
+	.hero-copy {
+		display: grid;
+		gap: 0.85rem;
+		max-width: 42rem;
+	}
+
+	.hero .eyebrow {
+		color: rgba(244, 225, 199, 0.72);
 	}
 
 	.subheading {
 		margin: 0;
 		max-width: 34rem;
-		line-height: 1.6;
-		color: #4c4339;
+		line-height: 1.65;
+		color: rgba(247, 237, 226, 0.78);
 	}
 
-	.summary-grid,
-	.direction-grid {
+	.hero-band {
+		display: grid;
+		gap: 0.9rem;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	.hero-pill {
+		display: grid;
+		gap: 0.35rem;
+		padding: 1rem 1.1rem 1.05rem;
+		border-radius: 1.25rem;
+		background: rgba(255, 249, 241, 0.05);
+		border: 1px solid rgba(255, 236, 212, 0.1);
+		backdrop-filter: blur(14px);
+	}
+
+	.hero-pill span {
+		font-size: 0.74rem;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: rgba(239, 222, 202, 0.6);
+	}
+
+	.hero-pill strong {
+		font-size: clamp(1.15rem, 2vw, 1.5rem);
+		letter-spacing: -0.03em;
+	}
+
+	.signal-pill {
+		background:
+			linear-gradient(180deg, var(--accent-soft), rgba(255, 249, 241, 0.04));
+		border-color: color-mix(in srgb, var(--accent) 26%, rgba(255, 236, 212, 0.08));
+	}
+
+	.result-layout {
+		display: grid;
+		gap: 1.75rem;
+	}
+
+	.details-column {
+		display: grid;
+		gap: 1.35rem;
+		width: min(100%, 56rem);
+	}
+
+	.tone-panel {
+		padding: 1.6rem;
+		border-radius: 1.75rem;
+		background:
+			radial-gradient(circle at top left, var(--surface-glow), transparent 34%),
+			linear-gradient(180deg, rgba(15, 13, 22, 0.92), rgba(20, 16, 26, 0.9));
+		border: 1px solid rgba(255, 236, 212, 0.08);
+		box-shadow:
+			0 20px 46px rgba(0, 0, 0, 0.28),
+			inset 0 1px 0 rgba(255, 244, 227, 0.04);
+	}
+
+	.pattern-overview-panel,
+	.email-panel {
+		border-radius: 1.35rem;
+		border: 1px solid rgba(255, 236, 212, 0.08);
+	}
+
+	.pattern-overview-panel {
+		gap: 1.15rem;
+	}
+
+	.pattern-overview-grid {
 		display: grid;
 		gap: 1rem;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
 	}
 
 	.card-actions {
@@ -603,28 +949,21 @@
 		gap: 0.75rem;
 	}
 
-	.direction-grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+	.actions-panel {
+		display: grid;
+		gap: 0.85rem;
+		padding-top: 0.55rem;
 	}
 
-	.summary-card,
 	.text-block,
 	.direction-card,
 	.empty {
-		padding: 1.2rem;
-		border-radius: 1.2rem;
-		background: rgba(255, 251, 245, 0.72);
-		border: 1px solid rgba(49, 43, 38, 0.12);
+		padding: 1.3rem;
+		border-radius: 1.35rem;
+		background: rgba(255, 248, 240, 0.04);
+		border: 1px solid rgba(255, 236, 212, 0.08);
 	}
 
-	.summary-card {
-		display: grid;
-		gap: 0.75rem;
-		align-content: start;
-		min-height: 9rem;
-	}
-
-	.summary-card p,
 	.direction-card p {
 		margin: 0;
 		font-size: clamp(1.35rem, 3vw, 2rem);
@@ -639,18 +978,129 @@
 		gap: 0.75rem;
 	}
 
+	.lead-block {
+		padding: 1.55rem;
+		background:
+			radial-gradient(circle at top left, var(--accent-soft), transparent 42%),
+			linear-gradient(145deg, rgba(19, 17, 29, 0.98), rgba(30, 22, 38, 0.94));
+		border-color: rgba(255, 236, 212, 0.12);
+		box-shadow: inset 0 0 0 1px rgba(255, 247, 235, 0.03);
+	}
+
+	.why-card {
+		padding: 1.45rem;
+		background:
+			linear-gradient(145deg, rgba(20, 17, 28, 0.96), rgba(16, 14, 23, 0.92));
+	}
+
+	.contrast-block {
+		padding: 1.45rem 1.4rem;
+		background:
+			linear-gradient(145deg, rgba(22, 16, 25, 0.96), rgba(31, 20, 20, 0.92));
+	}
+
+	.direction-panel .direction-card {
+		padding: 1.2rem 1.3rem 1.35rem;
+		max-width: 24rem;
+	}
+
+	.action-card {
+		padding: 1.45rem;
+		background:
+			radial-gradient(circle at top left, var(--accent-glow), transparent 36%),
+			linear-gradient(145deg, rgba(15, 13, 23, 0.98), rgba(31, 21, 29, 0.94));
+		border-color: color-mix(in srgb, var(--accent) 22%, rgba(255, 236, 212, 0.08));
+		box-shadow:
+			0 18px 40px rgba(0, 0, 0, 0.24),
+			inset 0 1px 0 rgba(255, 244, 227, 0.05);
+	}
+
+	.action-card h2,
+	.action-card p {
+		color: #f5eee3;
+	}
+
+	.action-panel .action-card p,
+	.direction-panel .direction-card p {
+		font-size: clamp(1.4rem, 3vw, 2.15rem);
+	}
+
+	.supporting-copy {
+		margin: 0;
+		max-width: 46rem;
+		line-height: 1.72;
+		color: rgba(245, 237, 228, 0.8);
+	}
+
+	.email-panel {
+		padding: 1.3rem 1.4rem;
+		background:
+			linear-gradient(145deg, rgba(17, 14, 24, 0.92), rgba(14, 12, 20, 0.88));
+	}
+
+	.email-copy {
+		max-width: 34rem;
+	}
+
+	.email-form {
+		display: grid;
+		gap: 0.8rem;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: center;
+	}
+
+	.form-helper {
+		margin: -0.1rem 0 0;
+		font-size: 0.9rem;
+		line-height: 1.5;
+		color: rgba(240, 220, 198, 0.58);
+	}
+
+	.email-input {
+		min-width: 0;
+		padding: 0.95rem 1rem;
+		border-radius: 999px;
+		border: 1px solid rgba(255, 236, 212, 0.12);
+		background: rgba(255, 248, 240, 0.05);
+		color: #f7efe5;
+		font: inherit;
+	}
+
+	.email-input::placeholder {
+		color: rgba(240, 220, 198, 0.46);
+	}
+
+	.email-input:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 3px;
+	}
+
+	.email-button {
+		white-space: nowrap;
+	}
+
 	.text-block p,
 	.empty {
 		margin: 0;
 		line-height: 1.7;
-		color: #2f2823;
+		color: rgba(245, 237, 228, 0.88);
+	}
+
+	.pattern-overview-panel .lead-block p {
+		font-size: clamp(1.08rem, 1.5vw, 1.22rem);
+		line-height: 1.82;
+		max-width: 48rem;
+	}
+
+	.tension-panel .contrast-block p {
+		color: rgba(244, 226, 210, 0.82);
 	}
 
 	.feedback {
-		margin: -0.75rem 0 0;
+		margin: -0.25rem 0 0;
 		font-size: 0.95rem;
 		line-height: 1.5;
-		color: #6b5d4d;
+		color: rgba(240, 220, 198, 0.72);
 	}
 
 	.cta,
@@ -672,38 +1122,39 @@
 
 	.cta {
 		border: 0;
-		background: #1e1b18;
-		color: #f8f3ea;
+		background:
+			linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #f19258 40%));
+		color: #140f11;
 		text-decoration: none;
+		box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
 	}
 
 	.secondary-cta {
-		border: 1px solid rgba(49, 43, 38, 0.16);
-		background: rgba(255, 251, 245, 0.78);
-		color: #1e1b18;
+		border: 1px solid rgba(255, 236, 212, 0.12);
+		background: rgba(255, 248, 240, 0.05);
+		color: #f7efe5;
 		cursor: pointer;
 	}
 
 	.cta:hover,
 	.cta:focus-visible {
-		background: #312b26;
 		transform: translateY(-1px);
 	}
 
 	.cta:focus-visible {
-		outline: 2px solid #8b765d;
+		outline: 2px solid var(--accent);
 		outline-offset: 4px;
 	}
 
 	.secondary-cta:hover,
 	.secondary-cta:focus-visible {
-		background: rgba(255, 251, 245, 0.94);
-		border-color: rgba(49, 43, 38, 0.24);
+		background: rgba(255, 248, 240, 0.08);
+		border-color: rgba(255, 236, 212, 0.22);
 		transform: translateY(-1px);
 	}
 
 	.secondary-cta:focus-visible {
-		outline: 2px solid #8b765d;
+		outline: 2px solid var(--accent);
 		outline-offset: 4px;
 	}
 
@@ -713,10 +1164,28 @@
 		transform: none;
 	}
 
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
 	@media (max-width: 760px) {
-		.summary-grid,
-		.direction-grid {
+		.hero-band,
+		.result-layout,
+		.pattern-overview-grid,
+		.email-form {
 			grid-template-columns: 1fr;
+		}
+
+		.result-layout {
+			gap: 1.25rem;
 		}
 	}
 
@@ -729,11 +1198,18 @@
 			gap: 1.5rem;
 		}
 
+		.hero,
+		.tone-panel {
+			padding: 1.25rem;
+			border-radius: 1.4rem;
+		}
+
 		.card-actions {
 			display: grid;
 		}
 
 		.cta,
+		.email-button,
 		.secondary-cta {
 			width: 100%;
 			justify-self: stretch;
