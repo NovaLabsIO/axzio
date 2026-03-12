@@ -18,8 +18,11 @@
 	let identityReading: IdentityReading | null = null;
 	let cardElement: HTMLDivElement | null = null;
 	let isExporting = false;
+	let isSharing = false;
+	let shareMessage = '';
 
 	const EXPORT_FILENAME = 'axzio-identity-signal.png';
+	const SHARE_TITLE = 'AXZIO Identity Signal';
 
 	onMount(() => {
 		const savedValue = sessionStorage.getItem(IDENTITY_RESULT_STORAGE_KEY);
@@ -88,49 +91,125 @@
 		});
 	}
 
+	function createShareText(reading: IdentityReading) {
+		return `My AXZIO Identity Signal: ${reading.archetype} • ${reading.primaryMode} • ${reading.growthVector}`;
+	}
+
+	async function createCardImageBlob() {
+		if (!cardElement) {
+			throw new Error('Identity card is unavailable.');
+		}
+
+		if ('fonts' in document) {
+			await document.fonts.ready;
+		}
+
+		const { svg, width, height } = createCardSvg(cardElement);
+		const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+
+		try {
+			const image = await loadImage(svgUrl);
+			const canvas = document.createElement('canvas');
+			const scale = window.devicePixelRatio > 1 ? 2 : 1;
+
+			canvas.width = width * scale;
+			canvas.height = height * scale;
+
+			const context = canvas.getContext('2d');
+
+			if (!context) {
+				throw new Error('Canvas export is unavailable.');
+			}
+
+			context.scale(scale, scale);
+			context.drawImage(image, 0, 0, width, height);
+
+			return await new Promise<Blob>((resolve, reject) => {
+				canvas.toBlob((blob) => {
+					if (!blob) {
+						reject(new Error('PNG export failed.'));
+						return;
+					}
+
+					resolve(blob);
+				}, 'image/png');
+			});
+		} finally {
+			URL.revokeObjectURL(svgUrl);
+		}
+	}
+
+	function downloadBlob(blob: Blob, filename: string) {
+		const url = URL.createObjectURL(blob);
+
+		try {
+			const downloadLink = document.createElement('a');
+			downloadLink.href = url;
+			downloadLink.download = filename;
+			downloadLink.click();
+		} finally {
+			URL.revokeObjectURL(url);
+		}
+	}
+
 	async function exportCard() {
-		if (!cardElement || isExporting) {
+		if (isExporting) {
 			return;
 		}
 
+		shareMessage = '';
 		isExporting = true;
 
 		try {
-			if ('fonts' in document) {
-				await document.fonts.ready;
-			}
-
-			const { svg, width, height } = createCardSvg(cardElement);
-			const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-
-			try {
-				const image = await loadImage(svgUrl);
-				const canvas = document.createElement('canvas');
-				const scale = window.devicePixelRatio > 1 ? 2 : 1;
-
-				canvas.width = width * scale;
-				canvas.height = height * scale;
-
-				const context = canvas.getContext('2d');
-
-				if (!context) {
-					throw new Error('Canvas export is unavailable.');
-				}
-
-				context.scale(scale, scale);
-				context.drawImage(image, 0, 0, width, height);
-
-				const downloadLink = document.createElement('a');
-				downloadLink.href = canvas.toDataURL('image/png');
-				downloadLink.download = EXPORT_FILENAME;
-				downloadLink.click();
-			} finally {
-				URL.revokeObjectURL(svgUrl);
-			}
+			const blob = await createCardImageBlob();
+			downloadBlob(blob, EXPORT_FILENAME);
 		} catch (error) {
 			console.error('Failed to export identity card.', error);
 		} finally {
 			isExporting = false;
+		}
+	}
+
+	async function shareCard() {
+		if (!identityReading || isSharing) {
+			return;
+		}
+
+		shareMessage = '';
+
+		if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+			shareMessage = 'Native sharing is not available on this device.';
+			return;
+		}
+
+		isSharing = true;
+
+		try {
+			const text = createShareText(identityReading);
+			const shareData: ShareData = {
+				title: SHARE_TITLE,
+				text
+			};
+
+			if (typeof File !== 'undefined' && typeof navigator.canShare === 'function') {
+				const blob = await createCardImageBlob();
+				const file = new File([blob], EXPORT_FILENAME, { type: 'image/png' });
+
+				if (navigator.canShare({ files: [file] })) {
+					shareData.files = [file];
+				}
+			}
+
+			await navigator.share(shareData);
+		} catch (error) {
+			if (error instanceof DOMException && error.name === 'AbortError') {
+				shareMessage = '';
+			} else {
+				console.error('Failed to share identity card.', error);
+				shareMessage = 'Sharing failed. Try Export Card instead.';
+			}
+		} finally {
+			isSharing = false;
 		}
 	}
 </script>
@@ -153,13 +232,27 @@
 				/>
 			</div>
 
-			<button class="secondary-cta" type="button" on:click={exportCard} disabled={isExporting}>
-				{#if isExporting}
-					Exporting...
-				{:else}
-					Export Card
-				{/if}
-			</button>
+			<div class="card-actions">
+				<button class="secondary-cta" type="button" on:click={exportCard} disabled={isExporting}>
+					{#if isExporting}
+						Exporting...
+					{:else}
+						Export Card
+					{/if}
+				</button>
+
+				<button class="secondary-cta" type="button" on:click={shareCard} disabled={isSharing}>
+					{#if isSharing}
+						Sharing...
+					{:else}
+						Share Card
+					{/if}
+				</button>
+			</div>
+
+			{#if shareMessage}
+				<p class="feedback">{shareMessage}</p>
+			{/if}
 
 			<section class="section">
 				<p class="section-label">Primary Identity Summary</p>
@@ -284,6 +377,12 @@
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 
+	.card-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+
 	.direction-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
@@ -325,6 +424,13 @@
 		margin: 0;
 		line-height: 1.7;
 		color: #2f2823;
+	}
+
+	.feedback {
+		margin: -0.75rem 0 0;
+		font-size: 0.95rem;
+		line-height: 1.5;
+		color: #6b5d4d;
 	}
 
 	.cta,
@@ -401,6 +507,10 @@
 
 		.panel {
 			gap: 1.5rem;
+		}
+
+		.card-actions {
+			display: grid;
 		}
 
 		.cta,
