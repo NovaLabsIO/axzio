@@ -18,6 +18,14 @@ AXZIO v1 is a lightweight identity reading web app built with SvelteKit.
 - Run a production build:
   `npm run build`
 
+## Vercel Deployment
+
+- Import the repo as `NovaLabsIO/axzio`
+- Framework preset: `SvelteKit`
+- Root directory: `.`
+- Node version: `22.x`
+- Required environment variable: `OPENAI_API_KEY`
+
 ## Product flow
 
 Landing page  
