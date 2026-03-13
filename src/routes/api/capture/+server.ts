@@ -142,7 +142,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	const readingSnapshot = createResultCaptureSnapshot(payload.reading);
 
 	const record = {
-		capturedAt: new Date().toISOString(),
 		userAgent: request.headers.get('user-agent') ?? '',
 		result: readingSnapshot
 	};

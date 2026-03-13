@@ -22,13 +22,11 @@ type ResultInsert = {
 	current_challenge: ResultCaptureSnapshot['currentChallenge'];
 	suggested_next_action: ResultCaptureSnapshot['suggestedNextAction'];
 	card_snapshot: Record<string, string>;
-	captured_at: string;
 	email: string | null;
 	user_agent: string;
 };
 
 type ResultCaptureContext = {
-	capturedAt: string;
 	userAgent: string;
 };
 
@@ -124,7 +122,6 @@ function createResultInsert(record: CaptureRecord): ResultInsert {
 		current_challenge: record.result.currentChallenge,
 		suggested_next_action: record.result.suggestedNextAction,
 		card_snapshot: record.kind === 'email' ? record.cardSnapshot : record.result,
-		captured_at: record.capturedAt,
 		email: record.kind === 'email' ? record.email : null,
 		user_agent: record.userAgent
 	};
@@ -190,7 +187,6 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 		const { error: emailError } = await supabase.from('axzio_email_submissions').insert({
 			result_id: resultRow.id,
 			email: record.email,
-			captured_at: record.capturedAt,
 			user_agent: record.userAgent
 		});
 
@@ -225,7 +221,6 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 		result_id: resultRow.id,
 		feedback_choice: record.feedback,
 		feedback_text: record.feedbackText,
-		captured_at: record.capturedAt,
 		user_agent: record.userAgent
 	});
 

@@ -10,7 +10,7 @@ create table if not exists public.axzio_results (
 	card_snapshot jsonb not null,
 	email text,
 	user_agent text not null default '',
-	captured_at timestamptz not null default timezone('utc', now())
+	created_at timestamptz not null default timezone('utc', now())
 );
 
 create table if not exists public.axzio_feedback (
@@ -19,7 +19,7 @@ create table if not exists public.axzio_feedback (
 	feedback_choice text not null check (feedback_choice in ('Yes', 'Somewhat', 'No')),
 	feedback_text text not null default '',
 	user_agent text not null default '',
-	captured_at timestamptz not null default timezone('utc', now())
+	created_at timestamptz not null default timezone('utc', now())
 );
 
 create table if not exists public.axzio_email_submissions (
@@ -27,5 +27,5 @@ create table if not exists public.axzio_email_submissions (
 	result_id bigint not null references public.axzio_results(id) on delete cascade,
 	email text not null,
 	user_agent text not null default '',
-	captured_at timestamptz not null default timezone('utc', now())
+	created_at timestamptz not null default timezone('utc', now())
 );
