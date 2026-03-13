@@ -12,10 +12,6 @@ function requireEnv(value: string | undefined, name: string) {
 
 export function createSupabaseAdminClient() {
 	const url = requireEnv(publicEnv.PUBLIC_SUPABASE_URL, 'PUBLIC_SUPABASE_URL');
-
-	// Kept as an explicit requirement for project configuration even though writes stay server-only.
-	requireEnv(publicEnv.PUBLIC_SUPABASE_PUBLISHABLE_KEY, 'PUBLIC_SUPABASE_PUBLISHABLE_KEY');
-
 	const serviceRoleKey = requireEnv(
 		privateEnv.SUPABASE_SERVICE_ROLE_KEY,
 		'SUPABASE_SERVICE_ROLE_KEY'

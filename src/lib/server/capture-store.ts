@@ -60,6 +60,40 @@ export function createResultCaptureSnapshot(reading: IdentityReading): ResultCap
 	};
 }
 
+type SupabaseLikeError = {
+	code?: string;
+	message?: string;
+};
+
+function getErrorDetails(error: unknown) {
+	const candidate = error as SupabaseLikeError | null;
+
+	return {
+		code: candidate?.code ?? 'unknown',
+		message: candidate?.message ?? 'Unknown error'
+	};
+}
+
+function isValidResultId(value: unknown) {
+	return typeof value === 'string' ? value.trim().length > 0 : typeof value === 'number';
+}
+
+function formatResultId(value: unknown) {
+	if (typeof value === 'string') {
+		return value.length <= 8 ? value : `${value.slice(0, 4)}...${value.slice(-4)}`;
+	}
+
+	if (typeof value === 'number') {
+		return String(value);
+	}
+
+	return 'missing';
+}
+
+function logCaptureStage(stage: string, details: Record<string, unknown>) {
+	console.info('[capture]', stage, details);
+}
+
 function createResultInsert(record: CaptureRecord): ResultInsert {
 	return {
 		archetype: record.result.archetype,
@@ -79,6 +113,11 @@ function createResultInsert(record: CaptureRecord): ResultInsert {
 export async function appendCaptureRecord(record: CaptureRecord) {
 	const supabase = createSupabaseAdminClient();
 
+	logCaptureStage('result_insert_start', {
+		table: 'axzio_results',
+		kind: record.kind
+	});
+
 	const { data: resultRow, error: resultError } = await supabase
 		.from('axzio_results')
 		.insert(createResultInsert(record))
@@ -86,10 +125,37 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 		.single();
 
 	if (resultError || !resultRow) {
+		const errorDetails = getErrorDetails(resultError);
+
+		logCaptureStage('result_insert_failed', {
+			table: 'axzio_results',
+			code: errorDetails.code,
+			message: errorDetails.message,
+			hasResultRow: Boolean(resultRow)
+		});
+	} else {
+		logCaptureStage('result_insert_succeeded', {
+			table: 'axzio_results',
+			resultId: formatResultId(resultRow.id)
+		});
+	}
+
+	if (resultError || !resultRow) {
 		throw resultError ?? new Error('Unable to insert result capture.');
 	}
 
+	logCaptureStage('result_id_check', {
+		present: Boolean(resultRow.id),
+		valid: isValidResultId(resultRow.id),
+		resultId: formatResultId(resultRow.id)
+	});
+
 	if (record.kind === 'email') {
+		logCaptureStage('email_insert_start', {
+			table: 'axzio_email_submissions',
+			resultId: formatResultId(resultRow.id)
+		});
+
 		const { error: emailError } = await supabase.from('axzio_email_submissions').insert({
 			result_id: resultRow.id,
 			email: record.email,
@@ -98,12 +164,30 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 		});
 
 		if (emailError) {
+			const errorDetails = getErrorDetails(emailError);
+
+			logCaptureStage('email_insert_failed', {
+				table: 'axzio_email_submissions',
+				resultId: formatResultId(resultRow.id),
+				code: errorDetails.code,
+				message: errorDetails.message
+			});
 			await supabase.from('axzio_results').delete().eq('id', resultRow.id);
 			throw emailError;
 		}
 
+		logCaptureStage('email_insert_succeeded', {
+			table: 'axzio_email_submissions',
+			resultId: formatResultId(resultRow.id)
+		});
+
 		return;
 	}
+
+	logCaptureStage('feedback_insert_start', {
+		table: 'axzio_feedback',
+		resultId: formatResultId(resultRow.id)
+	});
 
 	const { error: feedbackError } = await supabase.from('axzio_feedback').insert({
 		result_id: resultRow.id,
@@ -114,7 +198,20 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 	});
 
 	if (feedbackError) {
+		const errorDetails = getErrorDetails(feedbackError);
+
+		logCaptureStage('feedback_insert_failed', {
+			table: 'axzio_feedback',
+			resultId: formatResultId(resultRow.id),
+			code: errorDetails.code,
+			message: errorDetails.message
+		});
 		await supabase.from('axzio_results').delete().eq('id', resultRow.id);
 		throw feedbackError;
 	}
+
+	logCaptureStage('feedback_insert_succeeded', {
+		table: 'axzio_feedback',
+		resultId: formatResultId(resultRow.id)
+	});
 }

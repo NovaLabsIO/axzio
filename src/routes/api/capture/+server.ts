@@ -1,6 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { parseIdentityReading, type IdentityReading } from '$lib/identity/schema';
+import { env as privateEnv } from '$env/dynamic/private';
+import { env as publicEnv } from '$env/dynamic/public';
 import {
 	appendCaptureRecord,
 	createResultCaptureSnapshot,
@@ -22,12 +24,42 @@ type FeedbackCapturePayload = {
 
 type CapturePayload = EmailCapturePayload | FeedbackCapturePayload;
 
+type LoggedError = {
+	code?: string;
+	message?: string;
+};
+
 function isFeedbackValue(value: unknown): value is FeedbackValue {
 	return value === 'Yes' || value === 'Somewhat' || value === 'No';
 }
 
 function isValidEmail(email: string) {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function maskEmail(email: string) {
+	const [localPart = '', domain = ''] = email.split('@');
+	const localPreview = localPart.length <= 2 ? `${localPart.slice(0, 1)}*` : `${localPart.slice(0, 2)}***`;
+	const domainParts = domain.split('.');
+	const domainName = domainParts[0] ?? '';
+	const domainTld = domainParts.slice(1).join('.');
+	const domainPreview =
+		domainName.length <= 1 ? '*' : `${domainName.slice(0, 1)}***${domainTld ? `.${domainTld}` : ''}`;
+
+	return `${localPreview}@${domainPreview}`;
+}
+
+function logCaptureRoute(stage: string, details: Record<string, unknown>) {
+	console.info('[capture]', stage, details);
+}
+
+function getLoggedError(error: unknown) {
+	const candidate = error as LoggedError | null;
+
+	return {
+		code: candidate?.code ?? 'unknown',
+		message: candidate?.message ?? 'Unknown error'
+	};
 }
 
 function parseCapturePayload(body: unknown): CapturePayload | null {
@@ -69,6 +101,11 @@ function parseCapturePayload(body: unknown): CapturePayload | null {
 }
 
 export const POST: RequestHandler = async ({ request }) => {
+	logCaptureRoute('env_presence_check', {
+		hasPublicSupabaseUrl: Boolean(publicEnv.PUBLIC_SUPABASE_URL),
+		hasSupabaseServiceRoleKey: Boolean(privateEnv.SUPABASE_SERVICE_ROLE_KEY)
+	});
+
 	let requestBody: unknown;
 
 	try {
@@ -82,6 +119,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!payload) {
 		return json({ error: 'Invalid capture payload.' }, { status: 400 });
 	}
+
+	logCaptureRoute('request_received', {
+		kind: payload.kind,
+		hasReading: Boolean(payload.reading),
+		emailPreview: payload.kind === 'email' ? maskEmail(payload.email) : undefined,
+		hasFeedbackText:
+			payload.kind === 'feedback' ? payload.feedbackText.trim().length > 0 : undefined
+	});
 
 	const readingSnapshot = createResultCaptureSnapshot(payload.reading);
 
@@ -107,9 +152,20 @@ export const POST: RequestHandler = async ({ request }) => {
 				feedbackText: payload.feedbackText ?? ''
 			});
 		}
-	} catch {
+	} catch (error) {
+		const loggedError = getLoggedError(error);
+
+		logCaptureRoute('capture_failed', {
+			kind: payload.kind,
+			code: loggedError.code,
+			message: loggedError.message
+		});
 		return json({ error: 'Unable to store capture.' }, { status: 500 });
 	}
+
+	logCaptureRoute('capture_succeeded', {
+		kind: payload.kind
+	});
 
 	return json({ ok: true });
 };
