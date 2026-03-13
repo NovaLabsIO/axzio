@@ -1,5 +1,5 @@
 import type { IdentityReading } from '$lib/identity/schema';
-import { createSupabaseAdminClient } from '$lib/server/supabase';
+import { createSupabaseAdminContext, probeSupabaseConnectivity } from '$lib/server/supabase';
 
 export type FeedbackValue = 'Yes' | 'Somewhat' | 'No';
 
@@ -131,11 +131,23 @@ function createResultInsert(record: CaptureRecord): ResultInsert {
 }
 
 export async function appendCaptureRecord(record: CaptureRecord) {
-	const supabase = createSupabaseAdminClient();
+	const supabaseContext = createSupabaseAdminContext();
+	const supabase = supabaseContext.client;
+
+	try {
+		await probeSupabaseConnectivity(supabaseContext);
+	} catch (error) {
+		const message = sanitizeLogValue(
+			error instanceof Error ? error.message : 'Unknown connectivity probe error'
+		);
+
+		throw new CaptureStoreError('connectivity_probe_failed', 'unknown', message);
+	}
 
 	logCaptureStage('result_insert_start', {
 		table: 'axzio_results',
-		kind: record.kind
+		kind: record.kind,
+		host: supabaseContext.hostname
 	});
 
 	const { data: resultRow, error: resultError } = await supabase
