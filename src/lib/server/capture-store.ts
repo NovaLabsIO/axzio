@@ -1,4 +1,5 @@
 import type { IdentityReading } from '$lib/identity/schema';
+import { IDENTITY_PROMPT_VERSION } from '$lib/config/prompt-version';
 import { createSupabaseAdminContext, probeSupabaseConnectivity } from '$lib/server/supabase';
 
 export type FeedbackValue = 'Yes' | 'Somewhat' | 'No';
@@ -22,7 +23,7 @@ type ResultInsert = {
 	current_challenge: ResultCaptureSnapshot['currentChallenge'];
 	suggested_next_action: ResultCaptureSnapshot['suggestedNextAction'];
 	card_snapshot: Record<string, string>;
-	email: string | null;
+	prompt_version: string;
 	user_agent: string;
 };
 
@@ -122,7 +123,7 @@ function createResultInsert(record: CaptureRecord): ResultInsert {
 		current_challenge: record.result.currentChallenge,
 		suggested_next_action: record.result.suggestedNextAction,
 		card_snapshot: record.kind === 'email' ? record.cardSnapshot : record.result,
-		email: record.kind === 'email' ? record.email : null,
+		prompt_version: IDENTITY_PROMPT_VERSION,
 		user_agent: record.userAgent
 	};
 }

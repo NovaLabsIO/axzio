@@ -8,7 +8,7 @@ create table if not exists public.axzio_results (
 	current_challenge text not null,
 	suggested_next_action text not null,
 	card_snapshot jsonb not null,
-	email text,
+	prompt_version text not null,
 	user_agent text not null default '',
 	created_at timestamptz not null default timezone('utc', now())
 );
