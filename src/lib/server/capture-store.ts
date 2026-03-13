@@ -65,6 +65,18 @@ type SupabaseLikeError = {
 	message?: string;
 };
 
+export class CaptureStoreError extends Error {
+	stage: string;
+	code: string;
+
+	constructor(stage: string, code: string, message: string) {
+		super(message);
+		this.name = 'CaptureStoreError';
+		this.stage = stage;
+		this.code = code;
+	}
+}
+
 function getErrorDetails(error: unknown) {
 	const candidate = error as SupabaseLikeError | null;
 
@@ -72,6 +84,10 @@ function getErrorDetails(error: unknown) {
 		code: candidate?.code ?? 'unknown',
 		message: candidate?.message ?? 'Unknown error'
 	};
+}
+
+function sanitizeLogValue(value: string) {
+	return value.replace(/\s+/g, ' ').trim().slice(0, 240);
 }
 
 function isValidResultId(value: unknown) {
@@ -91,7 +107,11 @@ function formatResultId(value: unknown) {
 }
 
 function logCaptureStage(stage: string, details: Record<string, unknown>) {
-	console.info('[capture]', stage, details);
+	const parts = Object.entries(details)
+		.filter(([, value]) => value !== undefined)
+		.map(([key, value]) => `${key}=${String(value)}`);
+
+	console.info(`[capture] ${stage}${parts.length > 0 ? ` ${parts.join(' ')}` : ''}`);
 }
 
 function createResultInsert(record: CaptureRecord): ResultInsert {
@@ -126,22 +146,21 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 
 	if (resultError || !resultRow) {
 		const errorDetails = getErrorDetails(resultError);
+		const message = sanitizeLogValue(errorDetails.message);
 
 		logCaptureStage('result_insert_failed', {
 			table: 'axzio_results',
 			code: errorDetails.code,
-			message: errorDetails.message,
+			message,
 			hasResultRow: Boolean(resultRow)
 		});
+
+		throw new CaptureStoreError('result_insert_failed', errorDetails.code, message);
 	} else {
 		logCaptureStage('result_insert_succeeded', {
 			table: 'axzio_results',
 			resultId: formatResultId(resultRow.id)
 		});
-	}
-
-	if (resultError || !resultRow) {
-		throw resultError ?? new Error('Unable to insert result capture.');
 	}
 
 	logCaptureStage('result_id_check', {
@@ -165,15 +184,16 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 
 		if (emailError) {
 			const errorDetails = getErrorDetails(emailError);
+			const message = sanitizeLogValue(errorDetails.message);
 
 			logCaptureStage('email_insert_failed', {
 				table: 'axzio_email_submissions',
 				resultId: formatResultId(resultRow.id),
 				code: errorDetails.code,
-				message: errorDetails.message
+				message
 			});
 			await supabase.from('axzio_results').delete().eq('id', resultRow.id);
-			throw emailError;
+			throw new CaptureStoreError('email_insert_failed', errorDetails.code, message);
 		}
 
 		logCaptureStage('email_insert_succeeded', {
@@ -199,15 +219,16 @@ export async function appendCaptureRecord(record: CaptureRecord) {
 
 	if (feedbackError) {
 		const errorDetails = getErrorDetails(feedbackError);
+		const message = sanitizeLogValue(errorDetails.message);
 
 		logCaptureStage('feedback_insert_failed', {
 			table: 'axzio_feedback',
 			resultId: formatResultId(resultRow.id),
 			code: errorDetails.code,
-			message: errorDetails.message
+			message
 		});
 		await supabase.from('axzio_results').delete().eq('id', resultRow.id);
-		throw feedbackError;
+		throw new CaptureStoreError('feedback_insert_failed', errorDetails.code, message);
 	}
 
 	logCaptureStage('feedback_insert_succeeded', {

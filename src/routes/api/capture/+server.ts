@@ -4,6 +4,7 @@ import { parseIdentityReading, type IdentityReading } from '$lib/identity/schema
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import {
+	CaptureStoreError,
 	appendCaptureRecord,
 	createResultCaptureSnapshot,
 	type FeedbackValue
@@ -25,6 +26,7 @@ type FeedbackCapturePayload = {
 type CapturePayload = EmailCapturePayload | FeedbackCapturePayload;
 
 type LoggedError = {
+	stage?: string;
 	code?: string;
 	message?: string;
 };
@@ -50,16 +52,25 @@ function maskEmail(email: string) {
 }
 
 function logCaptureRoute(stage: string, details: Record<string, unknown>) {
-	console.info('[capture]', stage, details);
+	const parts = Object.entries(details)
+		.filter(([, value]) => value !== undefined)
+		.map(([key, value]) => `${key}=${String(value)}`);
+
+	console.info(`[capture] ${stage}${parts.length > 0 ? ` ${parts.join(' ')}` : ''}`);
 }
 
 function getLoggedError(error: unknown) {
 	const candidate = error as LoggedError | null;
 
 	return {
+		stage: candidate?.stage ?? 'unknown',
 		code: candidate?.code ?? 'unknown',
-		message: candidate?.message ?? 'Unknown error'
+		message: (candidate?.message ?? 'Unknown error').replace(/\s+/g, ' ').trim().slice(0, 240)
 	};
+}
+
+function isPreviewDeployment() {
+	return privateEnv.VERCEL_ENV === 'preview';
 }
 
 function parseCapturePayload(body: unknown): CapturePayload | null {
@@ -156,10 +167,26 @@ export const POST: RequestHandler = async ({ request }) => {
 		const loggedError = getLoggedError(error);
 
 		logCaptureRoute('capture_failed', {
+			stage: loggedError.stage,
 			kind: payload.kind,
 			code: loggedError.code,
 			message: loggedError.message
 		});
+
+		if (isPreviewDeployment()) {
+			return json(
+				{
+					error: 'Unable to store capture.',
+					debug: {
+						stage: loggedError.stage,
+						code: loggedError.code,
+						message: loggedError.message
+					}
+				},
+				{ status: 500 }
+			);
+		}
+
 		return json({ error: 'Unable to store capture.' }, { status: 500 });
 	}
 
