@@ -1,8 +1,18 @@
 <svelte:head>
-	<title>AXZIO | Discover Who You Are Becoming</title>
+	<title>AXZIO | Reveal Your Pattern</title>
 	<meta
 		name="description"
-		content="AXZIO analyzes patterns in your reflections to reveal the signal of who you are becoming."
+		content="AXZIO analyzes your reflections to show how you're operating right now — and the next best move forward."
+	/>
+	<meta property="og:title" content="AXZIO | Reveal Your Pattern" />
+	<meta
+		property="og:description"
+		content="AXZIO analyzes your reflections to show how you're operating right now — and the next best move forward."
+	/>
+	<meta name="twitter:title" content="AXZIO | Reveal Your Pattern" />
+	<meta
+		name="twitter:description"
+		content="AXZIO analyzes your reflections to show how you're operating right now — and the next best move forward."
 	/>
 </svelte:head>
 
