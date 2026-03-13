@@ -19,9 +19,11 @@
 <script lang="ts">
 	const eyebrow = 'AXZIO';
 	const headline = 'Reveal Your Pattern';
-	const supportingLines = ['Understand how you’re operating', 'See the next move forward'];
-	const expectation = '10 short questions · ~3 minutes · instant AXZIO ID';
-	const trustHeadingId = 'axzio-data-use-heading';
+	const supportingLines = [
+		'See the pattern guiding your decisions.',
+		'Find your next move forward.'
+	];
+	const expectation = '10 Short Questions · ~3 Minutes · Reveal Your AXZIO Pattern';
 	const trustPanelId = 'axzio-data-use-panel';
 
 	let isTrustOpen = false;
@@ -74,38 +76,44 @@
 				<p class="supporting-line">{line}</p>
 			{/each}
 		</div>
-		<div class="cta-row">
+		<div class="cta-group">
 			<a class="cta" href="/reading">Activate AXZIO</a>
-			<div
-				class:trust-bubble-open={isTrustOpen}
-				class="trust-bubble"
-				bind:this={trustBubbleElement}
-				onfocusout={handleTrustFocusOut}
-			>
-				<button
-					aria-controls={trustPanelId}
-					aria-expanded={isTrustOpen}
-					aria-labelledby={trustHeadingId}
-					class="trust-trigger"
-					type="button"
-					onclick={toggleTrustBubble}
-					onkeydown={handleTrustKeydown}
+			<div class="cta-row">
+				<div
+					class:trust-bubble-open={isTrustOpen}
+					class="trust-bubble"
+					bind:this={trustBubbleElement}
+					onfocusout={handleTrustFocusOut}
 				>
-					<span aria-hidden="true" class="trust-icon">?</span>
-					<span class="trust-label">How data is used</span>
-				</button>
-				<div aria-labelledby={trustHeadingId} class="trust-panel" id={trustPanelId} role="tooltip">
-					<p class="trust-heading" id={trustHeadingId}>How AXZIO uses your data</p>
-					<p class="trust-copy">
-						For this review version, AXZIO may store your result, card snapshot,
-						feedback, and optional email so we can improve the system. Your question
-						responses are not stored. AXZIO is designed to reflect patterns back to you
-						— not to define or own your identity.
-					</p>
+					<span class="trust-label">Your data stays yours.</span>
+					<button
+						aria-controls={trustPanelId}
+						aria-expanded={isTrustOpen}
+						aria-label="Learn more about AXZIO data use."
+						class="trust-trigger"
+						type="button"
+						onclick={toggleTrustBubble}
+						onkeydown={handleTrustKeydown}
+					>
+						<span aria-hidden="true" class="trust-icon">(?)</span>
+					</button>
+					<div class="trust-panel" id={trustPanelId} role="tooltip">
+						<p class="trust-copy">
+							AXZIO stores only the derived result and optional feedback to improve the
+							system. Your responses are not saved, and your data is never sold.
+						</p>
+						<p class="trust-copy">
+							Participation is optional — if you prefer not to store a result, simply do
+							not submit the analysis.
+						</p>
+						<p class="trust-copy">
+							AXZIO reflects patterns — it doesn’t collect identities.
+						</p>
+					</div>
 				</div>
 			</div>
+			<p class="expectation">{expectation}</p>
 		</div>
-		<p class="expectation">{expectation}</p>
 	</section>
 </main>
 
@@ -164,13 +172,17 @@
 		color: var(--app-text-muted);
 	}
 
+	.cta-group {
+		display: grid;
+		justify-items: center;
+		gap: 0.7rem;
+	}
+
 	.cta-row {
 		position: relative;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 0.85rem;
-		flex-wrap: wrap;
 	}
 
 	.cta {
@@ -212,64 +224,65 @@
 		position: relative;
 		display: inline-flex;
 		align-items: center;
+		justify-content: center;
+		gap: 0.35rem;
 	}
 
 	.trust-trigger {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.55rem;
-		padding: 0.7rem 0.95rem;
-		border: 1px solid rgba(255, 240, 221, 0.14);
-		border-radius: 999px;
-		background: rgba(255, 250, 242, 0.04);
-		color: var(--app-text-muted);
+		justify-content: center;
+		padding: 0.1rem;
+		border: 0;
+		border-radius: 0.45rem;
+		background: transparent;
+		color: var(--app-text-soft);
 		font: inherit;
-		font-size: 0.82rem;
+		font-size: 0.8rem;
 		letter-spacing: 0.02em;
 		cursor: pointer;
 		transition:
-			border-color 140ms ease,
-			background-color 140ms ease,
 			color 140ms ease,
 			transform 140ms ease;
-		backdrop-filter: blur(14px);
 	}
 
 	.trust-trigger:hover,
 	.trust-trigger:focus-visible,
 	.trust-bubble-open .trust-trigger {
-		border-color: rgba(255, 212, 165, 0.32);
-		background: rgba(255, 245, 230, 0.08);
 		color: var(--app-text);
-		transform: translateY(-1px);
 	}
 
 	.trust-trigger:focus-visible {
-		outline: 2px solid rgba(255, 212, 165, 0.52);
-		outline-offset: 4px;
+		outline: 2px solid rgba(255, 212, 165, 0.42);
+		outline-offset: 3px;
 	}
 
 	.trust-icon {
-		display: inline-grid;
-		place-items: center;
-		width: 1.25rem;
-		height: 1.25rem;
+		display: inline-block;
 		border-radius: 999px;
-		background: rgba(255, 243, 224, 0.12);
+		padding: 0.05rem 0.3rem;
+		background: rgba(255, 243, 224, 0.08);
 		color: var(--app-accent);
-		font-size: 0.8rem;
+		font-size: 0.74rem;
 		font-weight: 700;
-		line-height: 1;
+		line-height: 1.35;
+		transition:
+			background-color 140ms ease,
+			transform 140ms ease;
 	}
 
 	.trust-label {
 		white-space: nowrap;
+		color: var(--app-text-soft);
+		font-size: 0.8rem;
+		letter-spacing: 0.02em;
 	}
 
 	.trust-panel {
 		position: absolute;
 		top: calc(100% + 0.75rem);
-		right: 0;
+		left: 50%;
+		right: auto;
 		width: min(24rem, calc(100vw - 3rem));
 		padding: 1rem 1.05rem 1.05rem;
 		border-radius: 1rem;
@@ -281,7 +294,7 @@
 			inset 0 1px 0 rgba(255, 246, 232, 0.04);
 		text-align: left;
 		opacity: 0;
-		transform: translateY(-0.35rem);
+		transform: translate(-50%, -0.35rem);
 		pointer-events: none;
 		transition:
 			opacity 160ms ease,
@@ -289,20 +302,19 @@
 		z-index: 2;
 	}
 
-	.trust-bubble:hover .trust-panel,
+	.trust-trigger:hover + .trust-panel,
 	.trust-bubble:focus-within .trust-panel,
 	.trust-bubble-open .trust-panel {
 		opacity: 1;
-		transform: translateY(0);
+		transform: translate(-50%, 0);
 		pointer-events: auto;
 	}
 
-	.trust-heading {
-		margin: 0 0 0.45rem;
-		font-size: 0.86rem;
-		font-weight: 600;
-		letter-spacing: 0.01em;
-		color: var(--app-text);
+	.trust-trigger:hover .trust-icon,
+	.trust-trigger:focus-visible .trust-icon,
+	.trust-bubble-open .trust-icon {
+		background: rgba(255, 243, 224, 0.14);
+		transform: translateY(-1px);
 	}
 
 	.trust-copy {
@@ -312,8 +324,12 @@
 		color: var(--app-text-muted);
 	}
 
+	.trust-copy + .trust-copy {
+		margin-top: 0.75rem;
+	}
+
 	.expectation {
-		margin: -0.5rem 0 0;
+		margin: 0;
 		font-size: 0.82rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
@@ -329,10 +345,6 @@
 			gap: 1.4rem;
 		}
 
-		.cta-row {
-			align-items: stretch;
-		}
-
 		.supporting-line {
 			font-size: 1rem;
 		}
@@ -346,19 +358,19 @@
 		}
 
 		.trust-bubble {
-			width: 100%;
-			justify-content: center;
-		}
-
-		.trust-trigger {
-			width: 100%;
-			justify-content: center;
+			flex-wrap: wrap;
 		}
 
 		.trust-panel {
 			left: 0;
-			right: 0;
+			transform: translateY(-0.35rem);
 			width: auto;
+		}
+
+		.trust-trigger:hover + .trust-panel,
+		.trust-bubble:focus-within .trust-panel,
+		.trust-bubble-open .trust-panel {
+			transform: translateY(0);
 		}
 	}
 </style>
