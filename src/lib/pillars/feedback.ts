@@ -15,11 +15,21 @@ export type PillarsFeedback = {
 	submittedAt: string;
 };
 
+export type PillarsFeedbackSubmission = {
+	sentiment: PillarsFeedbackSentiment;
+	notes: string;
+	email: string;
+	timeframe: import('./types').Timeframe;
+	targetMode: import('./types').TargetMode;
+	currentScore: import('./types').PillarValues;
+	targetScore: import('./types').PillarValues;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return Boolean(value) && typeof value === 'object';
 }
 
-function isSentiment(value: unknown): value is PillarsFeedbackSentiment {
+export function isPillarsFeedbackSentiment(value: unknown): value is PillarsFeedbackSentiment {
 	return typeof value === 'string' && PILLARS_FEEDBACK_OPTIONS.includes(value as PillarsFeedbackSentiment);
 }
 
@@ -47,7 +57,7 @@ export function loadPillarsFeedback(): PillarsFeedback | null {
 		}
 
 		return {
-			sentiment: isSentiment(parsed.sentiment) ? parsed.sentiment : null,
+			sentiment: isPillarsFeedbackSentiment(parsed.sentiment) ? parsed.sentiment : null,
 			notes: typeof parsed.notes === 'string' ? parsed.notes : '',
 			email: typeof parsed.email === 'string' ? parsed.email : '',
 			submittedAt: typeof parsed.submittedAt === 'string' ? parsed.submittedAt : ''

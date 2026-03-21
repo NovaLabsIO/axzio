@@ -54,6 +54,7 @@
 	let feedback: PillarsFeedback = createDefaultPillarsFeedback();
 	let feedbackMessage = '';
 	let feedbackError = '';
+	let isSubmittingFeedback = false;
 	let hasHydrated = false;
 
 	onMount(() => {
@@ -114,8 +115,14 @@
 		feedbackMessage = '';
 	}
 
-	function submitFeedback() {
-		if (!hasFeedbackContent(feedback)) {
+	async function submitFeedback() {
+		if (!feedback.sentiment) {
+			feedbackError = 'Choose Helpful, Somewhat Helpful, or Not Helpful before submitting.';
+			feedbackMessage = '';
+			return;
+		}
+
+		if (!hasFeedbackContent(feedback) || isSubmittingFeedback) {
 			feedbackError = 'Add a quick rating, note, or follow-up email before submitting.';
 			feedbackMessage = '';
 			return;
@@ -128,10 +135,42 @@
 			submittedAt: new Date().toISOString()
 		};
 
-		savePillarsFeedback(submittedFeedback);
-		feedback = submittedFeedback;
+		isSubmittingFeedback = true;
 		feedbackError = '';
-		feedbackMessage = 'Feedback saved locally on this device for tester follow-up.';
+		feedbackMessage = '';
+
+		try {
+			const response = await fetch('/api/pillars-feedback', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					sentiment: submittedFeedback.sentiment,
+					notes: submittedFeedback.notes,
+					email: submittedFeedback.email,
+					timeframe: draft.timeframe,
+					targetMode: draft.targetMode,
+					currentScore: draft.currentScore,
+					targetScore: draft.targetScore
+				})
+			});
+
+			const payload = (await response.json()) as { error?: string };
+
+			if (!response.ok) {
+				feedbackError = payload.error ?? 'Unable to submit feedback right now.';
+				return;
+			}
+
+			savePillarsFeedback(submittedFeedback);
+			feedback = submittedFeedback;
+			feedbackMessage = 'Feedback submitted. Thanks for helping test 4 Pillars.';
+		} catch {
+			feedbackError = 'A network or server error prevented feedback submission.';
+		} finally {
+			isSubmittingFeedback = false;
+		}
 	}
 
 	function setTimeframe(timeframe: Timeframe) {
@@ -479,8 +518,17 @@
 					<p class="feedback-alert success" role="status">{feedbackMessage}</p>
 				{/if}
 
-				<button class="secondary-action" type="button" onclick={submitFeedback}>
-					Submit Feedback
+				<button
+					class="secondary-action"
+					type="button"
+					onclick={submitFeedback}
+					disabled={isSubmittingFeedback}
+				>
+					{#if isSubmittingFeedback}
+						Submitting...
+					{:else}
+						Submit Feedback
+					{/if}
 				</button>
 			</div>
 		</section>
@@ -792,7 +840,8 @@
 		transition:
 			transform 140ms ease,
 			border-color 140ms ease,
-			background-color 140ms ease;
+			background-color 140ms ease,
+			opacity 140ms ease;
 	}
 
 	.secondary-action:hover,
@@ -800,6 +849,11 @@
 		transform: translateY(-1px);
 		border-color: rgba(255, 212, 165, 0.28);
 		background: rgba(255, 248, 240, 0.08);
+	}
+
+	.secondary-action:disabled {
+		cursor: wait;
+		opacity: 0.7;
 	}
 
 	.feedback-group {
