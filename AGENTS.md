@@ -2,6 +2,29 @@
 
 This repository is the application layer for AXZIO.
 
+# AXZIO Agent Instructions
+
+Read this first before making changes:
+1. docs/AXZIO_SYSTEM_V1.md
+2. relevant existing files in the feature area
+3. current branch diff/status
+
+Rules:
+- Preserve AXZIO v1 architecture and naming conventions.
+- Do not introduce new frameworks or major dependencies unless explicitly required.
+- Prefer extending existing components and patterns over creating parallel systems.
+- Keep the UI mobile-first.
+- Do not remove or rewrite canonical docs unless the task explicitly requires it.
+- Before editing, inspect nearby files for local conventions.
+- For significant changes, summarize the plan before applying edits.
+- After changes, run the relevant checks and report exactly what changed.
+
+Implementation preference order:
+1. Reuse existing route/component/store patterns
+2. Minimal-diff changes
+3. Production-safe defaults
+4. Clear TODOs only when strictly necessary
+
 ## Purpose
 
 Use this repository to build and document:
