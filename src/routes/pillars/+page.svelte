@@ -519,8 +519,8 @@
 					<h2>Optional quick feedback</h2>
 				</div>
 				<p class="section-copy">
-					This is only for tester input in this first shareable build. It stays local to this device
-					and is not sent anywhere yet.
+					Your feedback helps improve AXZIO. When you submit, it is securely sent along with your
+					current 4 Pillars context so we can review what was helpful or unclear.
 				</p>
 			</div>
 
