@@ -47,6 +47,28 @@
 
 	const timeframeNotice =
 		'Today is the default. The longer timeframes are available now for planning, but deeper review-session logic can come later.';
+	const PILLAR_CONTEXT = [
+		{
+			key: 'body',
+			label: 'Body',
+			description: 'Energy, health, physical care, rest, and movement.'
+		},
+		{
+			key: 'mind',
+			label: 'Mind',
+			description: 'Clarity, focus, learning, mental load, and decision quality.'
+		},
+		{
+			key: 'heart',
+			label: 'Heart',
+			description: 'Relationships, emotions, connection, belonging, and self-compassion.'
+		},
+		{
+			key: 'spirit',
+			label: 'Spirit',
+			description: 'Purpose, meaning, alignment, inspiration, and inner direction.'
+		}
+	] as const;
 
 	let draft: PillarsDraft = createDefaultPillarsDraft('today');
 	let editingView: EditingView = 'current';
@@ -55,6 +77,7 @@
 	let feedbackMessage = '';
 	let feedbackError = '';
 	let isSubmittingFeedback = false;
+	let isPillarContextOpen = false;
 	let hasHydrated = false;
 
 	onMount(() => {
@@ -268,6 +291,36 @@
 				this device.
 			</p>
 		</div>
+
+		<section class="section-block context-section">
+			<div class="context-header">
+				<div>
+					<p class="section-label">Pillar Context</p>
+					<h2>Score from the same frame of reference</h2>
+				</div>
+				<button
+					type="button"
+					class:context-trigger-open={isPillarContextOpen}
+					class="context-trigger"
+					aria-expanded={isPillarContextOpen}
+					aria-controls="pillars-context-panel"
+					onclick={() => (isPillarContextOpen = !isPillarContextOpen)}
+				>
+					What do these mean?
+				</button>
+			</div>
+
+			{#if isPillarContextOpen}
+				<div class="context-grid" id="pillars-context-panel">
+					{#each PILLAR_CONTEXT as pillar}
+						<div class="context-card">
+							<p class="context-name">{pillar.label}</p>
+							<p class="context-copy">{pillar.description}</p>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</section>
 
 		<section class="section-block">
 			<div class="section-header">
@@ -573,6 +626,11 @@
 		padding: clamp(1rem, 3vw, 1.35rem);
 	}
 
+	.context-section {
+		display: grid;
+		gap: 0.9rem;
+	}
+
 	.hero {
 		display: grid;
 		gap: 0.85rem;
@@ -630,6 +688,14 @@
 		margin-bottom: 1rem;
 	}
 
+	.context-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+
 	.section-header.compact {
 		margin-bottom: 0.85rem;
 	}
@@ -655,7 +721,8 @@
 
 	.chip,
 	.segment,
-	.mode-button {
+	.mode-button,
+	.context-trigger {
 		border: 1px solid rgba(255, 236, 212, 0.12);
 		border-radius: 999px;
 		background: rgba(255, 250, 242, 0.04);
@@ -674,6 +741,10 @@
 		padding: 0.7rem 1rem;
 	}
 
+	.context-trigger {
+		padding: 0.72rem 1rem;
+	}
+
 	.mode-button {
 		padding: 0.8rem 1rem;
 		text-align: left;
@@ -683,16 +754,51 @@
 	.chip:hover,
 	.segment:hover,
 	.mode-button:hover,
+	.context-trigger:hover,
 	.chip:focus-visible,
 	.segment:focus-visible,
 	.mode-button:focus-visible,
+	.context-trigger:focus-visible,
 	.chip-active,
 	.segment-active,
-	.mode-active {
+	.mode-active,
+	.context-trigger-open {
 		border-color: rgba(255, 212, 165, 0.34);
 		background: rgba(255, 245, 230, 0.08);
 		color: var(--app-text);
 		transform: translateY(-1px);
+	}
+
+	.context-grid {
+		display: grid;
+		gap: 0.8rem;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.context-card {
+		display: grid;
+		gap: 0.45rem;
+		padding: 0.95rem;
+		border-radius: 1rem;
+		background: rgba(255, 248, 240, 0.04);
+		border: 1px solid rgba(255, 236, 212, 0.08);
+	}
+
+	.context-name,
+	.context-copy {
+		margin: 0;
+	}
+
+	.context-name {
+		font-size: 1rem;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		color: #f5eee3;
+	}
+
+	.context-copy {
+		color: var(--app-text-muted);
+		line-height: 1.6;
 	}
 
 	.target-mode-card {
@@ -922,6 +1028,10 @@
 
 	@media (max-width: 820px) {
 		.grid-section {
+			grid-template-columns: 1fr;
+		}
+
+		.context-grid {
 			grid-template-columns: 1fr;
 		}
 
